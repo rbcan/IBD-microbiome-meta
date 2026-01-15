@@ -1,0 +1,213 @@
+---
+title: "00_resampling"
+author: "Rebecca Ansorge"
+date: "09/12/2023"
+output: html_document
+---
+
+
+
+# Install load packages
+```{r setup, include=FALSE}
+
+list.of.packages <- c("dplyr", "reshape2", "propr", "meta", "ggplot2", "lattice", "DHARMa", "broomExtra")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+
+list.of.bioc <- c("phyloseq", "microbiome")
+new.packages <- list.of.bioc[!(list.of.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages)) BiocManager::install(new.packages)
+
+library(meta)
+library(DHARMa)
+library(nlme)
+library(ggplot2)
+library(phyloseq)
+library(dplyr)
+library(microbiome)
+library(reshape2)
+library(meta)
+library(lattice)
+library(tidyverse)
+#library(broomExtra)
+
+```
+
+```{r}
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+```
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+dim(meta)
+sapply(meta, class)
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+meta.summary<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
+
+
+```
+
+## Chec if all samples hava the right metadata
+
+Check if the cohort is specified for all
+```{r, message =F, warning =F}
+meta$Cohort_precise %>% unique()
+meta$Cohort %>% unique()
+
+```
+
+All have both cohort and cohort precise
+
+## Check all samples have IBD assigned
+```{r, message =F, warning =F}
+meta$IBD %>% unique()
+meta$IBD2 %>% unique()
+
+```
+In IBD2 there is IBDU as I converted them into factors I ignored this entry and is treated as an NA now
+
+## Check all cohort have case_controls
+```{r, message =F, warning =F}
+meta %>%
+  dplyr::group_by(Cohort_precise) %>%
+  summarise(unique(IBD)) %>%
+  print(n = 40)
+
+```
+
+# Split data in cross-sectiona and long
+```{r, message =F, warning =F}
+# remove cohort with only IBD
+meta<-subset(meta, Cohort_precise != "Fang_UCSD_IBD_Biobank" & 
+                Cohort_precise != "USA")
+
+
+meta.cross<-subset(meta, Cohort_setup == "crosssectional")
+meta.long<-subset(meta, Cohort_setup == "longitudinal")
+
+```
+
+## Longitudinal samples
+# Explore the repeated samples
+```{r, message=F, warning =F}
+meta.long$visit_number<-as.factor(meta.long$days_after_first_visit)
+meta.long$dummy<-rep(1, nrow(meta.long))
+
+meta.long %>%
+  dplyr::group_by(Cohort_precise, IndividualID) %>%
+  dplyr::summarise(n = sum(dummy)) %>% 
+  print(n=40) %>%
+  ggplot(aes(Cohort_precise, n, fill = Cohort_precise)) +
+  geom_boxplot(alpha = 0.7) + 
+  scale_fill_brewer(type = "d") +
+  geom_jitter(width = 0.4, alpha = 0.7, aes(fill = Cohort_precise), size = 4, pch = 21) +
+  scale_color_brewer(type = "d") +
+  ggtitle("Number of samples per participant across cohorts")
+```
+
+The number fo samples per single person is very variable, form 1 to 25.
+the mx number of samples per individual is 25.
+I will re sample up to 20 time the data
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+#orde the data randomly and then select only a single sample
+set.seed(342)
+# I can split the metadata in cohort and then in Individuals and then get indices of each 
+
+meta.long.cohort<-split(meta.long, f = meta.long$Cohort_precise)
+meta.long.cohort.ind<-lapply(meta.long.cohort, function(x) split(x, f = x$IndividualID))
+
+# createa a df with all ids that I will use
+df.row<-data.frame("Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6",
+                     "Sample7", "Sample8", "Sample9", "Sample10", "Sample11",
+                     "Sample12", "Sample13", "Sample14", "Sample15", "Sample16", "Sample17",
+                     "Sample18", "Sample19", "Sample20",  "IndividualID", "Cohort")
+for(i in 1:length(meta.long.cohort.ind)) {
+
+  for(id in 1:length(meta.long.cohort.ind[[i]])){
+    id.df<-meta.long.cohort.ind[[i]][[id]]
+    rows<-id.df$SmplID
+    if(length(rows) < 20){
+      rows1<-sample(rows, size = 20,replace = T )
+    } else {rows1<-sample(rows, size = 20,replace = F )}
+    rows2<-c(rows1, unique(id.df$IndividualID), names(meta.long.cohort.ind)[i])
+    df.row<-rbind.data.frame(df.row,rows2)
+  }
+  df.row<-as.data.frame(df.row)
+}
+names(df.row)<-df.row[1,]
+df.row<-df.row[-1,] # because the first row is names
+
+# check that the number of samples is the same as unique IDs
+nrow(df.row) == length(unique(meta.long$IndividualID))
+# I think that the reason why they are not unique is that there are similar ids in different studies
+write_delim(df.row,paste0(PATHanalNov2023,"PrepData/resampling.20.txt"),delim="\t")
+
+```
+
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+dim(meta)
+sapply(meta, class)
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+```
+
+# Split data in cross-sectiona and long
+```{r, message =F, warning =F}
+meta.cross<-subset(meta, Cohort_setup == "crosssectional")
+meta.long<-subset(meta, Cohort_setup == "longitudinal")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+#orde the data randomly and then select only a single sample
+set.seed(342)
+# I can split the metadata in cohort and then in Individuals and then get indices of each 
+
+meta.long.cohort<-split(meta.long, f = meta.long$Cohort_precise)
+meta.long.cohort.ind<-lapply(meta.long.cohort, function(x) split(x, f = x$IndividualID))
+
+# createa a df with all ids that I will use
+df.row<-data.frame("Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6",
+                     "Sample7", "Sample8", "Sample9", "Sample10", "Sample11",
+                     "Sample12", "Sample13", "Sample14", "Sample15", "Sample16", "Sample17",
+                     "Sample18", "Sample19", "Sample20",  "IndividualID", "Cohort")
+for(i in 1:length(meta.long.cohort.ind)) {
+
+  for(id in 1:length(meta.long.cohort.ind[[i]])){
+    id.df<-meta.long.cohort.ind[[i]][[id]]
+    rows<-id.df$SmplID
+    if(length(rows) < 20){
+      rows1<-sample(rows, size = 20,replace = T )
+    } else {rows1<-sample(rows, size = 20,replace = F )}
+    rows2<-c(rows1, unique(id.df$IndividualID), names(meta.long.cohort.ind)[i])
+    df.row<-rbind.data.frame(df.row,rows2)
+  }
+  df.row<-as.data.frame(df.row)
+}
+names(df.row)<-df.row[1,]
+df.row<-df.row[-1,] # because the first row is names
+
+# check that the number of samples is the same as unique IDs
+nrow(df.row) == length(unique(meta.long$IndividualID))
+# I think that the reason why they are not unique is that there are similar ids in different studies
+write_delim(df.row,paste0(PATHanalNov2023,"PrepData/resampling.CDUC.20.txt"),delim="\t")
+```
+
+

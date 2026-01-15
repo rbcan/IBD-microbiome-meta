@@ -1,0 +1,1228 @@
+---
+title: "DA_IBD_LM"
+author: "Stefano Romano"
+date: "May 15, 2022"
+output: 
+  html_document: 
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+# Install load packages
+```{r setup, include=FALSE}
+
+list.of.packages <- c("dplyr", "reshape2", "ggplot2", "lattice")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+
+list.of.bioc <- c("phyloseq","microbiome")
+new.packages <- list.of.bioc[!(list.of.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages)) BiocManager::install(new.packages)
+
+
+library(ggplot2)
+library(phyloseq)
+library(dplyr)
+library(microbiome)
+library(reshape2)
+library(tidyverse)
+library(RColorBrewer)
+library(cowplot)
+library(vegan)
+library(MatchIt)
+
+```
+
+# Load and clean data
+
+```{r}
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+```
+
+```{r}
+#colors
+col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4","#1F78B4", "grey40","#E8A400")
+names(col_IBD2)<-c("IBD","CD","UC","healthy","control", "Healthy","variable","disease")
+
+```
+
+Load the abundance file and the metadata
+
+```{r, message=F}
+
+spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+dim(spec)
+
+rownames(spec) %>% tail
+```
+
+The last row is "other". This will be used to calculate the relative abundances but will then be removed
+```{r, message =F, warning =F}
+
+spec.tss<-as.data.frame(prop.table(as.matrix(spec), 2))
+
+
+# now remove other
+spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
+dim(spec.tss)
+
+
+# check NAs
+spec.na<-apply(spec,2, function(x) is.na(x))
+all(spec.na == FALSE) 
+xl<-apply(is.na(spec.tss), 2, which)
+na.samples<-gsub("[.].*", "", names(unlist(xl))) %>% unique()
+# this samples need to be removed
+
+if(length(na.samples)>0){
+  spec.tss<-spec.tss[, -1*which(names(spec.tss) %in% na.samples )]
+} else {
+  cat("no NAs found")
+}
+  
+# are there empty rows
+spec.tss[rowSums(spec.tss) == 0,] %>% rownames()
+
+
+```
+There are 2036 Species and 4839 samples
+
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t") # load a single time point metadata
+dim(meta)
+sapply(meta, class)
+
+# check how many UIBD and remove 
+meta %>%
+  group_by(IBD2)%>%
+  count()
+meta<-meta[which(meta$IBD2!="IBDU"),]
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+# filter the species according to samples in the meta
+spec.tss<-spec.tss[, which(names(spec.tss) %in% meta$SmplID)]
+dim(spec.tss)
+
+spec.tss[rowSums(spec.tss) == 0,] %>% rownames() # now there are species with 0. Remove them
+
+spec.tss<-spec.tss[rowSums(spec.tss) != 0,] 
+dim(spec.tss)
+
+spec.tss[,colSums(spec.tss) == 0] %>% colnames()
+spec.tss<-spec.tss[,colSums(spec.tss) != 0] # now there are samples with 0. Remove them
+dim(spec.tss)
+
+# I need to remove the same from the metadata
+meta<-meta[meta$SmplID %in% names(spec.tss),]
+meta<-meta[order(meta$SmplID),]
+spec.tss<-spec.tss[, order(names(spec.tss))]
+all(names(spec.tss) == meta$SmplID)
+dim(spec.tss)
+dim(meta)
+
+```
+
+## import human reads
+
+```{r}
+humanReads<-read.delim2(paste0(PATHanalNov2023,"humanReads/IBD2022.4.map"), comment.char = "#", header=FALSE)%>%
+  select(1,36)
+colnames(humanReads)<-c("SmplID","HumanRds")
+head(humanReads)
+
+meta<-inner_join(meta,humanReads,by="SmplID")
+meta$HumanRds<-as.numeric(meta$HumanRds)
+```
+
+## Check if all samples hava the right metadata
+
+Check if the cohort is specified for all
+```{r, message =F, warning =F}
+meta$Cohort_precise %>% unique()
+meta$Cohort %>% unique()
+
+```
+
+All have both cohort and cohort precise
+
+## Check all samples have IBD assigned
+```{r, message =F, warning =F}
+meta$IBD %>% unique()
+meta$IBD2 %>% unique()
+
+```
+
+
+## Check all cohort have case_controls
+```{r, message =F, warning =F}
+meta %>%
+  dplyr::group_by(Cohort_precise) %>%
+  summarise(unique(IBD)) %>%
+  print(n = 40)
+
+```
+
+There are two cohorts with no controls:
+Fang_UCSD_IBD_Biobank,USA
+
+
+
+# Select first 4 samples for each indiviual
+```{r}
+# add number of visits
+meta<-meta[order(meta$days_after_first_visit),]
+meta<- meta %>%
+  group_by(IndividualID) %>%
+  mutate(visit = row_number())
+
+# select only visits from 1:4
+
+meta4<-subset(meta, visit %in% 1:4) # change here for more or less reps
+#meta4<-meta 
+
+# select only a single patient ID and calcualte beta
+df.beta.pair<-data.frame(
+  IndividualID = vector(length = length(unique(meta4$IndividualID))),
+  average = vector(length = length(unique(meta4$IndividualID))),
+  maxdist = vector(length = length(unique(meta4$IndividualID))),
+  stdev = vector(length = length(unique(meta4$IndividualID))),
+  cohort = vector(length = length(unique(meta4$IndividualID))),
+  IBD = vector(length = length(unique(meta4$IndividualID))),
+  IBD2 = vector(length = length(unique(meta4$IndividualID))),
+  deltaHumanRds = vector(length = length(unique(meta4$IndividualID)))
+)
+
+for(i in 1:length(unique(meta4$IndividualID))) {
+
+  meta.tmp<-subset(meta4, IndividualID == unique(meta4$IndividualID)[i])
+  if(nrow(meta.tmp) == 4){  # change here for more or less reps, needs to match above
+  spec.tss.tmp<-spec.tss[, which(names(spec.tss) %in% meta.tmp$SmplID)]
+  spec.tss.tmp<-spec.tss.tmp[rowSums(spec.tss.tmp) != 0,] # to remove empty rows otherwise vegan complains
+  spec.tss.tmp<-t(spec.tss.tmp) # transpose here
+  dist.v<-as.vector(vegan::vegdist(spec.tss.tmp, method = "bray"))
+
+  delta_hr<-(max(meta.tmp$HumanRds)-min(meta.tmp$HumanRds))
+
+  df.beta.pair$IndividualID[i]<-meta.tmp$IndividualID[1]
+  df.beta.pair$average[i]<-mean(dist.v)
+  df.beta.pair$maxdist[i]<-max(dist.v)
+  df.beta.pair$stdev[i]<-sd(dist.v)
+  df.beta.pair$cohort[i]<-meta.tmp$Cohort_precise[1]
+  df.beta.pair$IBD[i]<-meta.tmp$IBD[1] %>% as.character()
+  df.beta.pair$IBD2[i]<-meta.tmp$IBD2[1] %>% as.character()
+  df.beta.pair$deltaHumanRds[i]<-delta_hr
+
+  }
+}
+
+# remove the skipped samples
+df.beta.pair<-subset(df.beta.pair, cohort != FALSE)
+df.beta.pair$IBD2<-factor(df.beta.pair$IBD2, levels = c("healthy", "UC", "CD"))
+df.beta.pair<-df.beta.pair%>%
+  mutate(average_log2=log2(average))%>%
+  mutate(deltaHumanRds_log2=log2(deltaHumanRds))%>%
+  mutate(maxdist_log2=log2(maxdist))
+
+# plot this
+ggplot(df.beta.pair, aes(IBD2, average, fill = IBD2)) +
+  geom_boxplot() +
+  geom_jitter()+
+  scale_fill_brewer(type = "div", palette = "Set2") +
+  theme_bw() +
+  labs(title = "Average distances between 4 consecutive samples across conditions",
+       subtitle = "Bray-Crutis distances were used")
+
+```
+
+
+```{r}
+cor_iiv_hr<-cor.test(df.beta.pair$average, df.beta.pair$deltaHumanRds, use = "complete.obs", method="spearman")
+cor_iiv_hr_CD<-cor.test((df.beta.pair%>%filter(IBD2=="CD"))$average, (df.beta.pair%>%filter(IBD2=="CD"))$deltaHumanRds, use = "complete.obs", method="spearman")
+cor_iiv_hr_UC<-cor.test((df.beta.pair%>%filter(IBD2=="UC"))$average, (df.beta.pair%>%filter(IBD2=="UC"))$deltaHumanRds, use = "complete.obs", method="spearman")
+cor_iiv_hr_CTRL<-cor.test((df.beta.pair%>%filter(IBD2=="healthy"))$average, (df.beta.pair%>%filter(IBD2=="healthy"))$deltaHumanRds, use = "complete.obs", method="spearman")
+
+
+cor.test((df.beta.pair%>%filter(cohort=="LIBD" & IBD2=="CD"))$average, (df.beta.pair%>%filter(cohort=="LIBD" & IBD2=="CD"))$deltaHumanRds, use = "complete.obs", method="spearman")
+cor.test((df.beta.pair%>%filter(cohort=="LIBD"))$average, (df.beta.pair%>%filter(cohort=="LIBD"))$deltaHumanRds, use = "complete.obs", method="spearman")
+
+# fit log2 transformed
+dist_hr_log2_lm<-lmerTest::lmer(maxdist_log2 ~ deltaHumanRds_log2*IBD2 + (1|cohort), data=df.beta.pair)
+summary(dist_hr_log2_lm)
+anova(dist_hr_log2_lm)
+lmerTest::ranova(dist_hr_log2_lm) # cohort effect
+qqnorm(resid(dist_hr_log2_lm))
+
+emmeans::emm(dist_hr_log2_lm,pairwise~deltaHumanRds_log2)
+
+saveRDS(df.beta.pair,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pair.tempInd.rds"))
+```
+
+# Testing correlation between BC distances and human read differences
+# Select 4 or more samples for each indiviual
+```{r fig.height=20, fig.width=10}
+
+# There are some Individual IDs that overlap between HMP and HMP2
+# In total 88 overlaps and 46 unique in HMP and 18 unique in HMP2
+# To proceed with per-individual calculations that we will account for cohort later we treat the overlapping individuals as separate individuals
+HMP_Inds<-(meta%>%filter(Cohort_precise=="HMP"))$IndividualID%>%unique()
+HMP2_Inds<-(meta%>%filter(Cohort_precise=="HMP2"))$IndividualID%>%unique()
+HMP_uniqueInds<-setdiff(HMP_Inds,HMP2_Inds)
+HMP2_uniqueInds<-setdiff(HMP2_Inds,HMP_Inds)
+HMP_HMP2_sharedInds<-HMP_Inds[HMP_Inds%in%HMP2_Inds]
+length(HMP_uniqueInds)
+length(HMP2_uniqueInds)
+length(HMP_HMP2_sharedInds)
+length(HMP_uniqueInds)+length(HMP2_uniqueInds)+length(HMP_HMP2_sharedInds)
+length((meta%>%filter(Cohort_precise%in%c("HMP","HMP2")))$IndividualID%>%unique())
+
+# ammend the cohort to overlapping Individuals IDs and save to new column IndividualID2
+meta_splitHMP<-meta%>%
+  mutate(IndividualID2=ifelse(IndividualID%in%HMP_HMP2_sharedInds,paste0(IndividualID,"_",Cohort_precise),IndividualID))
+
+perInd_dist_vs_deltaHR<-lapply(unique(meta_splitHMP$IndividualID2), function(x) {
+  meta.tmp<-meta_splitHMP%>%filter(IndividualID2 == x)
+
+    if(nrow(meta.tmp) >= 4){  # change here for more or less reps, needs to match above
+    spec.tss.tmp<-spec.tss[, which(names(spec.tss) %in% meta.tmp$SmplID)]
+    spec.tss.tmp<-spec.tss.tmp[rowSums(spec.tss.tmp) != 0,] # to remove empty rows otherwise vegan complains
+    spec.tss.tmp<-t(spec.tss.tmp) ## EDIT needed to transpose here
+    dist_ab<-vegan::vegdist(spec.tss.tmp, method = "bray")
+    
+    meta.tmp2<-meta.tmp%>%
+      column_to_rownames("SmplID")%>%
+      select(c("HumanRds"))
+  
+    mat_dist_ab<-as.matrix(dist_ab)
+    mat_hr<-mat_dist_ab
+    mat_hr[!is.na(mat_hr)]<-NA
+    all(rownames(mat_hr)==colnames(mat_hr))
+    
+    for (n in (1:ncol(mat_hr))){
+      for (i in (1:nrow(mat_hr))){
+        a=rownames(mat_hr)[i]
+        b=rownames(mat_hr)[n]
+        #print(paste(a,b))
+        deltaHR<-(meta.tmp2[a,]-meta.tmp2[b,])
+        mat_hr[a,b]<-abs(deltaHR)
+      }
+    }
+    
+    dist_hr<-as.dist(mat_hr)
+    all(labels(dist_hr)==labels(dist_ab))
+    
+    
+    df.tmp<-data.frame(
+      delta_human_reads=as.vector(dist_hr),
+      microbiome_bc_distance=as.vector(dist_ab),
+      IndividualID2=paste(x)
+    )
+    
+    return(df.tmp)
+    }
+  
+})
+names(perInd_dist_vs_deltaHR)<-unique(meta_splitHMP$IndividualID2)
+
+
+perInd_dist_vs_deltaHR.df<-do.call(rbind, perInd_dist_vs_deltaHR)
+perInd_dist_vs_deltaHR_meta.df<-perInd_dist_vs_deltaHR.df%>%
+  left_join(meta_splitHMP%>%
+              ungroup(IndividualID) %>%
+              select(c(IndividualID2,IBD,IBD2,Cohort_precise))%>%
+              distinct(),
+            by="IndividualID2")%>%
+  rename(cohort=Cohort_precise)%>%
+  mutate(delta_human_reads_log2=log2(delta_human_reads))%>% 
+  mutate(microbiome_bc_distance_log2=log2(microbiome_bc_distance)) 
+
+# number of Individuals
+perInd_dist_vs_deltaHR_meta.df$IndividualID2%>%unique()%>%length()
+
+```
+
+
+```{r}
+# fitting linear models
+## set variables to factors
+perInd_dist_vs_deltaHR_meta.df$cohort<-as.factor(perInd_dist_vs_deltaHR_meta.df$cohort)
+perInd_dist_vs_deltaHR_meta.df$IBD2<-as.factor(perInd_dist_vs_deltaHR_meta.df$IBD2)
+## make sure testing values are numeric
+class(perInd_dist_vs_deltaHR_meta.df$microbiome_bc_distance_log2)
+class(perInd_dist_vs_deltaHR_meta.df$delta_human_reads_log2)
+
+# remove rows with NA
+nrow(perInd_dist_vs_deltaHR_meta.df[-which(is.na(perInd_dist_vs_deltaHR_meta.df)),])
+nrow(perInd_dist_vs_deltaHR_meta.df)
+perInd_dist_vs_deltaHR_meta.df<-perInd_dist_vs_deltaHR_meta.df[-which(is.na(perInd_dist_vs_deltaHR_meta.df)),]
+anyNA(perInd_dist_vs_deltaHR_meta.df)
+
+# remove Sample with 0 in both values
+perInd_dist_vs_deltaHR_meta.df<-perInd_dist_vs_deltaHR_meta.df%>%
+  filter(microbiome_bc_distance>0 & delta_human_reads>0)
+
+# fitting mixed effects model with random effect Individual nested within cohort
+# log2 transformed
+dist_hr_indNest_log2_lm<-lmerTest::lmer(microbiome_bc_distance_log2 ~ delta_human_reads_log2*IBD2 + (1|cohort/IndividualID2), data=perInd_dist_vs_deltaHR_meta.df)
+summary(dist_hr_indNest_log2_lm)
+anova(dist_hr_indNest_log2_lm)
+
+lmerTest::ranova(dist_hr_indNest_log2_lm) # cohort effect
+qqnorm(resid(dist_hr_indNest_log2_lm))
+
+# fitting mixed effects model with random effect Individual separately per cohort
+## log2 transformed per cohort
+cohorts<-perInd_dist_vs_deltaHR_meta.df$cohort%>%as.character()%>%unique()
+
+dist_hr_indNest_log2_lm_listCohorts<-lapply(cohorts, function(c){
+  if(c=="Lewis"){
+    df_cohort<-perInd_dist_vs_deltaHR_meta.df%>%filter(cohort==c)
+    dist_hr_indNest_log2_lm<-lmerTest::lmer(microbiome_bc_distance_log2 ~ delta_human_reads_log2 + (1|IndividualID2), data=df_cohort)
+  } else {
+    df_cohort<-perInd_dist_vs_deltaHR_meta.df%>%filter(cohort==c)
+    dist_hr_indNest_log2_lm<-lmerTest::lmer(microbiome_bc_distance_log2 ~ delta_human_reads_log2*IBD2 + (1|IndividualID2), data=df_cohort)
+  }
+  return(dist_hr_indNest_log2_lm)
+})
+names(dist_hr_indNest_log2_lm_listCohorts)<-cohorts
+
+summary(dist_hr_indNest_log2_lm_listCohorts$USA)
+summary(dist_hr_indNest_log2_lm_listCohorts$Fang_UCSD_IBD_Biobank)
+summary(dist_hr_indNest_log2_lm_listCohorts$HMP2)
+summary(dist_hr_indNest_log2_lm_listCohorts$HMP)
+summary(dist_hr_indNest_log2_lm_listCohorts$Lewis)
+summary(dist_hr_indNest_log2_lm_listCohorts$LIBD)
+
+dist_hr_indNest_log2_lm_perCohort<-data.frame(
+  USA=c(summary(dist_hr_indNest_log2_lm_listCohorts$USA)$coefficients[2,5],summary(dist_hr_indNest_log2_lm_listCohorts$USA)$coefficients[2,1]),
+  IBD_Biobank=c(summary(dist_hr_indNest_log2_lm_listCohorts$Fang_UCSD_IBD_Biobank)$coefficients[2,5],summary(dist_hr_indNest_log2_lm_listCohorts$Fang_UCSD_IBD_Biobank)$coefficients[2,1]),
+  HMP2=c(summary(dist_hr_indNest_log2_lm_listCohorts$HMP2)$coefficients[2,5],summary(dist_hr_indNest_log2_lm_listCohorts$HMP2)$coefficients[2,1]),
+  HMP=c(summary(dist_hr_indNest_log2_lm_listCohorts$HMP)$coefficients[2,5],summary(dist_hr_indNest_log2_lm_listCohorts$HMP)$coefficients[2,1]),
+  Lewis=c(summary(dist_hr_indNest_log2_lm_listCohorts$Lewis)$coefficients[2,5],summary(dist_hr_indNest_log2_lm_listCohorts$Lewis)$coefficients[2,1]),
+  LIBD=c(summary(dist_hr_indNest_log2_lm_listCohorts$LIBD)$coefficients[2,5],summary(dist_hr_indNest_log2_lm_listCohorts$LIBD)$coefficients[2,1])
+)
+rownames(dist_hr_indNest_log2_lm_perCohort)<-c("p","estimate")
+
+
+perInd_dist_vs_deltaHR_meta.df%>%
+  group_by(cohort)%>%
+  count(IBD2)
+
+saveRDS(dist_hr_indNest_log2_lm,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/dist_hr_indNest_log2_lm.rds"))
+saveRDS(dist_hr_indNest_log2_lm_perCohort,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/dist_hr_indNest_log2_lm_perCohort.rds"))
+
+```
+
+```{r fig.width=8, fig.height=3}
+# assess per individual correlation between pairwise BC dissimilarity and human read difference
+
+## association coefficient across Individuals and cohorts
+acrossIndChrts_dist_vs_deltaHR_meta_slope.df<-perInd_dist_vs_deltaHR_meta.df%>%
+    ungroup()%>%
+    filter(IBD2 !="CD" | cohort!="HMP")%>%
+    group_by(IBD2) %>%
+    summarize(slope = lm(microbiome_bc_distance_log2 ~ delta_human_reads_log2)$coeff[2])
+
+## association coefficient across Individuals per cohort and condition
+acrossInd_dist_vs_deltaHR_meta_slope.df<-perInd_dist_vs_deltaHR_meta.df%>%
+    ungroup()%>%
+    group_by(cohort, IBD2) %>%
+    summarize(slope = lm(microbiome_bc_distance_log2 ~ delta_human_reads_log2)$coeff[2])
+
+## association coefficient per Individual
+perInd_dist_vs_deltaHR_meta_slope.df<-perInd_dist_vs_deltaHR_meta.df%>%
+    group_by(IndividualID2) %>%
+    mutate(slope = lm(microbiome_bc_distance_log2 ~ delta_human_reads_log2)$coeff[2])%>%
+    mutate(slope2=ifelse(slope>0,"pos","neg"))
+
+perInd_dist_vs_deltaHR_meta_slope.df%>%
+  group_by(cohort)%>%
+  count(slope2)
+
+perInd_dist_vs_deltaHR_meta_slope.df%>%
+  group_by(IBD2)%>%
+  count(slope2)
+
+slope_summary_Ind<-perInd_dist_vs_deltaHR_meta_slope.df%>%
+  group_by(cohort,IBD2)%>%
+  count(slope2)%>%
+  spread(slope2,n)
+
+## mean slope of association 
+slopeDegree_summary_acrossInd<-acrossInd_dist_vs_deltaHR_meta_slope.df%>%
+  group_by(cohort, IBD2)%>%
+  summarize(mean(slope))
+
+slopeDF<-perInd_dist_vs_deltaHR_meta_slope.df%>%distinct(IndividualID2, .keep_all = TRUE)
+ggplot(slopeDF, aes(x=IBD2,y=slope))+
+  geom_boxplot(aes(fill=IBD2))
+
+slopeDF$IBD2<-as.factor(slopeDF$IBD2)
+slopeDF$cohort<-as.factor(slopeDF$cohort)
+coin::wilcox_test(slope ~ IBD2 | cohort, data=slopeDF%>%filter(IBD2!="CD"))
+coin::wilcox_test(slope ~ IBD2 | cohort, data=slopeDF%>%filter(IBD2!="UC"))
+
+
+saveRDS(perInd_dist_vs_deltaHR_meta_slope.df,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/perInd_dist_vs_deltaHR.rds"))
+
+```
+
+### Compare high HR vs low HR to controls
+
+Use 20th and 80 quantile of human read percent to define high and low HR
+
+```{r fig.height=4, fig.width=14}
+# group per cohort since percentages of HR vary between cohorts
+meta_hr_percentiles<-meta%>%
+  group_by(Cohort_precise)%>%
+  summarize(HighHR_perc80=quantile(as.numeric(HumanRds), 0.8, na.rm=TRUE),LowHR_perc20=quantile(as.numeric(HumanRds), 0.2, na.rm=TRUE))
+
+# join classification of samples into low and high HR groups with metadata
+meta_hr_num<-meta%>%
+  left_join(meta_hr_percentiles,by="Cohort_precise")%>%
+  mutate(HumanRds_group=ifelse(HumanRds>HighHR_perc80,"HighHR",ifelse(HumanRds<LowHR_perc20,"LowHR",NA)))%>% 
+  filter(!is.na(HumanRds_group))%>%
+  distinct(IndividualID, .keep_all = TRUE)
+
+
+# group per cohort and conditionto obtain disease subtype-specific classification of high and low HR groups
+meta_hr_cond_percentiles<-meta%>%
+  group_by(Cohort_precise, IBD2)%>%
+  summarize(HighHR_perc80=quantile(as.numeric(HumanRds), 0.8, na.rm=TRUE),LowHR_perc20=quantile(as.numeric(HumanRds), 0.2, na.rm=TRUE))
+
+# join classification of samples into low and high HR groups with metadata
+meta_hr_cond_num<-meta%>%
+  left_join(meta_hr_cond_percentiles,by=c("Cohort_precise","IBD2"))%>%
+  mutate(HumanRds_group=ifelse(IBD2=="healthy","control",ifelse(HumanRds>HighHR_perc80,"HighHR",ifelse(HumanRds<LowHR_perc20,"LowHR",NA))))%>% 
+  filter(!is.na(HumanRds_group))%>%
+  distinct(IndividualID, .keep_all = TRUE)
+
+#check number of Individuals with samples classified as high or low HR for both
+meta_hr_num$IndividualID%>%length()
+meta_hr_num$IndividualID%>%unique()%>%length()
+meta_hr_cond_num$IndividualID%>%length()
+meta_hr_cond_num$IndividualID%>%unique()%>%length()
+```
+
+Use classification based on per-cohort classification:
+
+```{r}
+
+## subset species abundances in samples to samples only that are classified as high or low HR
+
+meta_hr_num%>%
+  group_by(Cohort_precise)%>%
+  count(HumanRds_group)
+
+spec.tss.HL_hr<-spec.tss[, which(names(spec.tss) %in% meta_hr_num$SmplID)]
+spec.tss.HL_hr<-spec.tss.HL_hr[rowSums(spec.tss.HL_hr) != 0,] # to remove empty rows otherwise vegan complains
+
+all(colnames(spec.tss.HL_hr)==meta_hr_num$SmplID)
+spec.tss.HL_hr <- spec.tss.HL_hr[,meta_hr_num$SmplID]
+all(colnames(spec.tss.HL_hr)==meta_hr_num$SmplID)
+
+spec.tss.HL_hr<-t(spec.tss.HL_hr) # transpose
+dist.HL_hr<-vegan::vegdist(spec.tss.HL_hr, method = "bray") # bray-curtis dissimilarities between samples
+
+all(labels(dist.HL_hr)==meta_hr_num$SmplID)
+
+## Permanova to assess whether significant differences in bray-curtis dissimilarity between high and low HR groups - restrict permutations within cohort
+set.seed(222)
+perm<-how(blocks = meta_hr_num$Cohort_precise, nperm = 999)
+pmva.HL_hr<-adonis2(formula = dist.HL_hr ~ HumanRds_group, data = meta_hr_num, parallel = T, permutations = perm)
+pmva.HL_hr
+
+# Get pairwise dissimilarities into dataframe
+dist.HL_hr_gat<-dist.HL_hr%>%
+  as.matrix()%>%
+  as.data.frame()%>%
+  rownames_to_column("SmplID1")%>%
+  gather(SmplID2,dist,-SmplID1)%>%
+  left_join(meta_hr_num,by=c("SmplID1"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group,Cohort_precise,IBD2)%>%
+  rename("HumanRds_group1"=HumanRds_group)%>%
+  rename("Cohort_precise1"=Cohort_precise)%>%
+  rename("IBD21"=IBD2)%>%
+  left_join(meta_hr_num,by=c("SmplID2"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group1,Cohort_precise1,IBD21,HumanRds_group,Cohort_precise,IBD2)%>%
+  rename("HumanRds_group2"=HumanRds_group)%>%
+  rename("Cohort_precise2"=Cohort_precise)%>%
+  rename("IBD22"=IBD2)%>%
+  mutate(comparison=ifelse(HumanRds_group1==HumanRds_group2,HumanRds_group1,"LowHR-HighHR"))
+
+# compare pairwise BC dissimilarities among lowHR samples with BC dissimilarities among HighHR samples
+dist.HL_hr_gat.sub1<-dist.HL_hr_gat%>%
+  filter(comparison!="LowHR-HighHR")%>%
+  filter(Cohort_precise1==Cohort_precise2)%>%
+  mutate(comparison=as.factor(comparison))%>%
+  mutate(cohort=as.factor(Cohort_precise1))
+
+# wilcoxon test blocked by cohort
+wt_HL_hr<-coin::wilcox_test(dist ~comparison | cohort, data=dist.HL_hr_gat.sub1)
+wt_HL_hr
+# calculate effect size r
+n<-nrow(dist.HL_hr_gat.sub1)
+coin::statistic(wt_HL_hr)/sqrt(n)
+
+# create plot
+col_compHL<-c("darkorange1","khaki2")
+names(col_compHL)<-c("HighHR","LowHR")
+
+p_HL_IBD<-ggplot(dist.HL_hr_gat%>%filter(comparison!="LowHR-HighHR"), aes(x=comparison,y=dist))+
+  #geom_violin()+
+  geom_boxplot(aes(fill=comparison))+
+  scale_fill_manual(values=col_compHL, breaks=names(col_compHL), name="inflammation index", labels=c("flare-like","remission-like"))+
+  theme_bw()+
+  ylab("BC dissimilarity")+
+  xlab("")
+```
+
+Use classification based on per-cohort and per-condotion classification:
+
+```{r}
+# use classification based on per-cohort and per-condotion classification
+
+## subset species abundances in samples to samples only that are classified as high or low HR
+
+spec.tss.HL_hr_cond<-spec.tss[, which(names(spec.tss) %in% meta_hr_cond_num$SmplID)]
+spec.tss.HL_hr_cond<-spec.tss.HL_hr_cond[rowSums(spec.tss.HL_hr_cond) != 0,] # to remove empty rows otherwise vegan complains
+
+all(colnames(spec.tss.HL_hr_cond)==meta_hr_cond_num$SmplID)
+spec.tss.HL_hr_cond <- spec.tss.HL_hr_cond[,meta_hr_cond_num$SmplID]
+all(colnames(spec.tss.HL_hr_cond)==meta_hr_cond_num$SmplID)
+
+spec.tss.HL_hr_cond<-t(spec.tss.HL_hr_cond)
+dist.HL_hr_cond<-vegan::vegdist(spec.tss.HL_hr_cond, method = "bray")
+
+all(labels(dist.HL_hr_cond)==meta_hr_cond_num$SmplID)
+
+col_comp<-c("darkorange1","khaki2","#1F78B4")
+names(col_comp)<-c("control-HighHR","control-LowHR","control")
+
+# Get pairwise dissimilarities into dataframe
+dist.HL_hr_cond_gat<-dist.HL_hr_cond%>%
+  as.matrix()%>%
+  as.data.frame()%>%
+  rownames_to_column("SmplID1")%>%
+  gather(SmplID2,dist,-SmplID1)%>%
+  left_join(meta_hr_cond_num,by=c("SmplID1"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group,Cohort_precise,IBD2)%>%
+  rename("HumanRds_group1"=HumanRds_group)%>%
+  rename("Cohort_precise1"=Cohort_precise)%>%
+  rename("IBD21"=IBD2)%>%
+  left_join(meta_hr_cond_num,by=c("SmplID2"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group1,Cohort_precise1,IBD21,HumanRds_group,Cohort_precise,IBD2)%>%
+  rename("HumanRds_group2"=HumanRds_group)%>%
+  rename("Cohort_precise2"=Cohort_precise)%>%
+  rename("IBD22"=IBD2)%>%
+  mutate(comparison=ifelse(HumanRds_group1==HumanRds_group2,HumanRds_group1,paste0(HumanRds_group1,"_",HumanRds_group2)))
+
+ctrl_low<-c("control_LowHR","LowHR_control")
+ctrl_high<-c("control_HighHR","HighHR_control")
+
+dist.HL_hr_cond_gat<-dist.HL_hr_cond_gat%>%
+  mutate(comparison2=ifelse(comparison%in%ctrl_low,"control-LowHR",ifelse(comparison%in%ctrl_high,"control-HighHR",comparison)))
+
+# wilcoxon test to test differences in pairwise BC dissimilarity between groups control-HoghHR and control-lowHR and highHR-lowHR
+wilcox.test((dist.HL_hr_cond_gat%>%filter(comparison=="control"))$dist,(dist.HL_hr_cond_gat%>%filter(comparison=="HighHR"))$dist)
+wilcox.test((dist.HL_hr_cond_gat%>%filter(comparison=="control"))$dist,(dist.HL_hr_cond_gat%>%filter(comparison=="LowHR"))$dist)
+wilcox.test((dist.HL_hr_cond_gat%>%filter(comparison%in%ctrl_high))$dist,(dist.HL_hr_cond_gat%>%filter(comparison%in%ctrl_low))$dist)
+
+# only within cohort
+dist.HL_hr_cond_gat_intrChrt<-dist.HL_hr_cond_gat%>%
+  filter(Cohort_precise1==Cohort_precise2)%>%
+  filter(comparison%in%c(ctrl_low,ctrl_high,"control"))%>%
+  mutate(cohort=gsub("Fang_UCSD_","",Cohort_precise1))%>%
+  mutate(cohort=gsub("cohort1000","1000",Cohort_precise1))
+
+# wilcoxon tests
+dist.HL_hr_cond_gat_intrChrt$comparison<-as.factor(dist.HL_hr_cond_gat_intrChrt$comparison)
+dist.HL_hr_cond_gat_intrChrt$comparison2<-factor(dist.HL_hr_cond_gat_intrChrt$comparison2, levels=names(col_comp))
+dist.HL_hr_cond_gat_intrChrt$cohort<-as.factor(dist.HL_hr_cond_gat_intrChrt$cohort)
+wt.ctrlLow_vs_ctrlHigh<-coin::wilcox_test(dist ~ comparison2 | cohort, data=dist.HL_hr_cond_gat_intrChrt%>%filter(comparison%in%c(ctrl_low,ctrl_high)))
+n.ctrlLow_vs_ctrlHigh<-dist.HL_hr_cond_gat_intrChrt%>%filter(comparison%in%c(ctrl_low,ctrl_high))%>%nrow()
+
+wt.ctrl_vs_ctrlLow<-coin::wilcox_test(dist ~ comparison2 | cohort, data=dist.HL_hr_cond_gat_intrChrt%>%filter(comparison2%in%c("control","control-LowHR")))
+n.ctrl_vs_ctrlLow<-dist.HL_hr_cond_gat_intrChrt%>%filter(comparison2%in%c("control","control-LowHR"))%>%nrow()
+
+wt.ctrl_vs_ctrlHigh<-coin::wilcox_test(dist ~ comparison2 | cohort, data=dist.HL_hr_cond_gat_intrChrt%>%filter(comparison2%in%c("control","control-HighHR")))
+n.ctrl_vs_ctrlHigh<-dist.HL_hr_cond_gat_intrChrt%>%filter(comparison2%in%c("control","control-HighHR"))%>%nrow()
+
+# merge wilcoxon test results into df
+lowHR_vs_highHR.df<-data.frame(
+  comparison=c("ctrlLow_vs_ctrlHigh","ctrl_vs_ctrlLow","ctrl_vs_ctrlHigh"),
+  p=c(coin::pvalue(wt.ctrlLow_vs_ctrlHigh),coin::pvalue(wt.ctrl_vs_ctrlLow),coin::pvalue(wt.ctrl_vs_ctrlHigh)),
+  effectSize=c(coin::statistic(wt.ctrlLow_vs_ctrlHigh)/sqrt(n.ctrlLow_vs_ctrlHigh),coin::statistic(wt.ctrl_vs_ctrlLow)/sqrt(n.ctrl_vs_ctrlLow),coin::statistic(wt.ctrl_vs_ctrlHigh)/sqrt(n.ctrl_vs_ctrlHigh))
+)
+# adjust p-value
+lowHR_vs_highHR.df$padjust<-p.adjust(lowHR_vs_highHR.df$p, method = "BH" )
+```
+
+```{r}
+# create plots
+
+# per cohort
+dist.HL_hr_cond_gat_intrChrt<-dist.HL_hr_cond_gat_intrChrt%>%
+  mutate(comparison3=gsub("HR","Iidx",comparison2))
+col_comp2<-col_comp
+names(col_comp2)<-gsub("HR","Iidx",names(col_comp))
+p_dist_HR_chrts<-ggplot(dist.HL_hr_cond_gat_intrChrt, aes(x=comparison3,y=dist))+
+  geom_boxplot(aes(fill=comparison3),outlier.size = 0.1)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45,hjust=1))+
+  scale_fill_manual(values=col_comp2, breaks=names(col_comp2), name="comparison", labels=c("control-flare","control-remission","control"))+
+  facet_grid(.~cohort)+
+  ylab("Pairwise BC dissimilarity")
+p_dist_HR_chrts
+
+# across cohorts
+p_dist_HR_all<-
+  ggplot(dist.HL_hr_cond_gat_intrChrt, aes(x=comparison2,y=dist))+
+  geom_boxplot(aes(fill=comparison2),outlier.size = 0.1)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45,hjust=1))+
+  scale_fill_manual(values=col_comp, breaks=names(col_comp))+
+  ylab("Pairwise BC dissimilarity")
+p_dist_HR_all
+
+# combine across and per-cohort
+p_dist_HR_combined<-plot_grid(p_dist_HR_all+theme(legend.position="none", axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks.x=element_blank()),
+          p_dist_HR_chrts+theme(legend.position="top",axis.text.x=element_blank(), axis.text.y=element_blank(),axis.title=element_blank(), axis.ticks=element_blank()),
+          nrow=1, align="h", axis="tb", rel_widths = c(1,8.5),labels=c("A","B"))
+p_dist_HR_combined
+```
+
+```{r}
+# export figs
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/dist_ctrl_hlHR.pdf"), width=14,height=4)
+p_dist_HR_combined
+dev.off()
+
+
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_dist_ctrl_hlHR.pdf"), width=13,height=3)
+p_dist_HR_chrts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
+dev.off()
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_dist_ctrl_hlHR.png"),p_dist_HR_chrts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank()), width=14,height=4)
+
+
+saveRDS(dist.HL_hr_cond_gat_intrChrt,paste0(PATHanalNov2023,"humanReads/dist.HL_hr_cond_gat_intrChrt.rds"))
+
+```
+
+Assess difference in high HR and low HR groups in controls only
+
+```{r}
+## controls only high infl vs low Infl
+meta_hr_cond_num_CTRL<-meta%>%
+  left_join(meta_hr_cond_percentiles,by=c("Cohort_precise","IBD2"))%>%
+  filter(IBD2=="healthy")%>%
+  mutate(HumanRds_group=ifelse(HumanRds>HighHR_perc80,"HighHR",ifelse(HumanRds<LowHR_perc20,"LowHR",NA)))%>% 
+  filter(!is.na(HumanRds_group))%>%
+  distinct(IndividualID, .keep_all = TRUE)
+
+meta_hr_cond_num_CTRL%>%
+  group_by(Cohort_precise)%>%
+  count(HumanRds_group)
+
+spec.tss.HL_hr_cond_CTRL<-spec.tss[, which(names(spec.tss) %in% meta_hr_cond_num_CTRL$SmplID)]
+spec.tss.HL_hr_cond_CTRL<-spec.tss.HL_hr_cond_CTRL[rowSums(spec.tss.HL_hr_cond_CTRL) != 0,] # to remove empty rows otherwise vegan complains
+
+all(colnames(spec.tss.HL_hr_cond_CTRL)==meta_hr_cond_num_CTRL$SmplID)
+spec.tss.HL_hr_cond_CTRL <- spec.tss.HL_hr_cond_CTRL[,meta_hr_cond_num_CTRL$SmplID]
+all(colnames(spec.tss.HL_hr_cond_CTRL)==meta_hr_cond_num_CTRL$SmplID)
+
+spec.tss.HL_hr_cond_CTRL<-t(spec.tss.HL_hr_cond_CTRL)
+dist.HL_hr_cond_CTRL<-vegan::vegdist(spec.tss.HL_hr_cond_CTRL, method = "bray")
+
+all(labels(dist.HL_hr_cond_CTRL)==meta_hr_cond_num_CTRL$SmplID)
+
+dist.HL_hr_cond_gat_CTRL<-dist.HL_hr_cond_CTRL%>%
+  as.matrix()%>%
+  as.data.frame()%>%
+  rownames_to_column("SmplID1")%>%
+  gather(SmplID2,dist,-SmplID1)%>%
+  left_join(meta_hr_cond_num_CTRL,by=c("SmplID1"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group,Cohort_precise,IBD2)%>%
+  rename("HumanRds_group1"=HumanRds_group)%>%
+  rename("Cohort_precise1"=Cohort_precise)%>%
+  rename("IBD21"=IBD2)%>%
+  left_join(meta_hr_cond_num_CTRL,by=c("SmplID2"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group1,Cohort_precise1,IBD21,HumanRds_group,Cohort_precise,IBD2)%>%
+  rename("HumanRds_group2"=HumanRds_group)%>%
+  rename("Cohort_precise2"=Cohort_precise)%>%
+  rename("IBD22"=IBD2)%>%
+  mutate(comparison=ifelse(HumanRds_group1==HumanRds_group2,HumanRds_group1,paste0(HumanRds_group1,"_",HumanRds_group2)))
+
+# wicoxon test to test difference in pairwise BC dissimilarities between high HR and low HR groups in controls; blocked by cohort
+
+dist.HL_hr_cond_gat_CTRL_filt<-dist.HL_hr_cond_gat_CTRL%>%
+  filter(Cohort_precise1==Cohort_precise2)%>%
+  filter(comparison%in%c("LowHR","HighHR"))
+
+dist.HL_hr_cond_gat_CTRL_filt$comparison<-as.factor(dist.HL_hr_cond_gat_CTRL_filt$comparison)
+dist.HL_hr_cond_gat_CTRL_filt$cohort<-as.factor(dist.HL_hr_cond_gat_CTRL_filt$Cohort_precise2)
+wt.low_vs_high_CTRL<-coin::wilcox_test(dist ~ comparison | cohort, data=dist.HL_hr_cond_gat_CTRL_filt)
+wt.low_vs_high_CTRL
+
+# calculate effect size r
+n<-nrow(dist.HL_hr_cond_gat_CTRL_filt)
+coin::statistic(wt.low_vs_high_CTRL)/sqrt(n)
+
+# plot
+p_HL_CTRL<-ggplot(dist.HL_hr_cond_gat_CTRL_filt, aes(x=comparison,y=dist))+
+  geom_boxplot(aes(fill=comparison))+
+  scale_fill_manual(values=col_compHL, breaks=names(col_compHL), name="inflammation\nindex", labels=c("flare-like","remission-like"))+
+  theme_bw()+
+  ylab("BC dissimilarity")+
+  xlab("")
+p_HL_CTRL
+
+```
+
+```{r}
+# combine HR-LR figure supplement
+p_suppl_HL<-plot_grid(p_HL_IBD+theme(legend.position = "none",axis.text.x = element_blank(),axis.ticks.x = element_blank())+ggtitle("IBD individuals"), p_HL_CTRL+theme(axis.title.y = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())+ggtitle("Control individuals"), labels = c("A","B"), rel_widths = c(1,1.45))
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig.HL_ibd_ctrls.pdf"),p_suppl_HL,height=4,width=7)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig.HL_ibd_ctrls.png"),p_suppl_HL,height=4,width=7)
+```
+
+Matching of HR percentages between control and IBD 
+
+```{r}
+## matched high infl vs low Infl control - IBD
+filtered_HRmaxmin<-meta%>%
+  filter(!is.na(HumanRds))%>%
+  ungroup()%>%
+  group_by(IBD2,Cohort_precise)%>%
+  summarise(maxHR=max(HumanRds), minHR=min(HumanRds))%>%
+  ungroup()%>%
+  group_by(Cohort_precise)%>%
+  summarize(maxHRl=min(maxHR),minHRh=max(minHR))%>%
+  left_join(meta, by="Cohort_precise")%>%
+  filter(HumanRds<maxHRl & HumanRds>minHRh)
+
+# Convert to binary treatment variable
+cohortlist<-unique(filtered_HRmaxmin$Cohort_precise)
+
+# do matching per cohort
+matched_data.list<-lapply(cohortlist, function(c){
+  df <- filtered_HRmaxmin %>%
+    distinct(IndividualID, .keep_all = TRUE)%>% # single sample for timeseries data only
+    filter(IBD%in%c("healthy","IBD"))%>%
+    filter(Cohort_precise==c)%>%
+    mutate(treatment = ifelse(IBD == "healthy", 1, 0))
+    
+
+  if("healthy" %in% unique(df$IBD)){
+    # Perform nearest neighbor matching
+    m.out <- matchit(treatment ~ HumanRds, data = df, method = "nearest", distance = "mahalanobis")
+    # Get matched dataset
+    matched_data <- match.data(m.out)
+    } else {
+    matched_data <- NULL
+    }
+  return(matched_data)
+})
+names(matched_data.list)<-cohortlist
+
+p1_md_hr.list<-lapply(cohortlist, function(c){
+  md<-matched_data.list[[c]]
+    if(!is.null(md)){
+    plot<-ggplot(md, aes(x=IBD,y=HumanRds))+
+    geom_boxplot(aes(fill=IBD))
+  } else {
+    plot<-NULL
+  }
+  return(plot)
+})
+names(p1_md_hr.list)<-cohortlist
+```
+
+```{r}
+# create list with BC dissimilarity per cohort
+dist_md_hr.list<-lapply(cohortlist, function(c){
+  md<-matched_data.list[[c]]
+  if(!is.null(md)){
+    md.spec<-spec.tss[, which(names(spec.tss) %in% md$SmplID)]
+    md.spec<-md.spec[rowSums(md.spec) != 0,] # to remove empty rows otherwise vegan complains
+    
+    all(colnames(md.spec)==md$SmplID)
+    md.spec <- md.spec[,md$SmplID]
+    all(colnames(md.spec)==md$SmplID)
+    
+    md.spec<-t(md.spec)
+    md.dist<-vegan::vegdist(md.spec, method = "bray")
+  } else {
+    md.dist<- NULL
+  }
+  return(md.dist)
+})
+names(dist_md_hr.list)<-cohortlist
+```
+
+```{r}
+# compute permanova to test wether BC dissimilarites differ between high HR and low HR groups (matched)
+pmva_md_hr.list<-lapply(cohortlist, function(c){
+  md<-matched_data.list[[c]]
+  md.dist<-dist_md_hr.list[[c]]
+  if(!is.null(md)){
+    print(all(labels(md.dist)==md$SmplID))
+    set.seed(222)
+    pmva<-adonis2(md.dist ~ IBD2, data = md)
+  } else {
+    pmva<-NULL
+  }
+  return(pmva)
+})
+names(pmva_md_hr.list)<-cohortlist
+
+pmva_md_hr.listDF<-lapply(cohortlist, function(c){
+  pmva<-pmva_md_hr.list[[c]]
+  if(!is.null(pmva)){
+    pmva.df<-data.frame(
+      cohort=c,
+      p=pmva$`Pr(>F)`[1],
+      R2=pmva$R2[1],
+      n=nrow(matched_data.list[[c]])
+    )
+
+  } else {
+    pmva.df<-NULL
+  }
+  return(pmva.df)
+})
+names(pmva_md_hr.listDF)<-cohortlist
+pmva_md_hr.df<-do.call(rbind, pmva_md_hr.listDF)
+pmva_md_hr.df$q<-p.adjust(pmva_md_hr.df$p, method = "BH")
+pmva_md_hr.df
+
+# export permanova results to csv
+write.csv(pmva_md_hr.df, paste0(PATHanalNov2023,"Downstream/Results/pmva.matchedInfl.csv"), row.names = FALSE)
+```
+
+```{r}
+# create boxplots per cohort
+df.p_box_md_hr.list<-lapply(cohortlist, function(c){
+  md<-matched_data.list[[c]]
+  md.dist<-dist_md_hr.list[[c]]
+  if(!is.null(md)){
+    md.dist_gat<-md.dist%>%
+      as.matrix()%>%
+      as.data.frame()%>%
+      rownames_to_column("SmplID1")%>%
+      gather(SmplID2,dist,-SmplID1)%>%
+      left_join(md,by=c("SmplID1"="SmplID"))%>%
+      select(SmplID1,SmplID2,dist,subclass,Cohort_precise,IBD)%>%
+      rename("subclass1"=subclass)%>%
+      rename("Cohort_precise1"=Cohort_precise)%>%
+      rename("IBD1"=IBD)%>%
+      left_join(md,by=c("SmplID2"="SmplID"))%>%
+      select(SmplID1,SmplID2,dist,subclass1,Cohort_precise1,IBD1,subclass,Cohort_precise,IBD)%>%
+      rename("subclass2"=subclass)%>%
+      rename("Cohort_precise2"=Cohort_precise)%>%
+      rename("IBD2"=IBD)%>%
+        filter(SmplID1!=SmplID2)%>%
+      mutate(IBD=ifelse(IBD1==IBD2,paste(IBD1),"control-IBD"))%>%
+      mutate(IBD=ifelse(IBD=="healthy","control",paste(IBD)))%>%
+      filter(IBD!="control-IBD")%>%
+      mutate(cohort=Cohort_precise1)
+  
+  } else {
+    md.dist_gat<-NULL
+    #plot<-NULL
+  }
+  return(md.dist_gat)
+})
+names(df.p_box_md_hr.list)<-cohortlist
+df.p_box_md_hr.gat<-do.call(rbind, df.p_box_md_hr.list)
+p_box_md_hr<-ggplot(df.p_box_md_hr.gat, aes(x=cohort,y=dist))+
+  geom_boxplot(aes(fill=IBD))+
+  scale_fill_manual(values=col_IBD2, name="")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  ylab("BC dissimilarity")
+p_box_md_hr
+
+# export plots
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_box_matched_hr.pdf"), width=7,height=3)
+p_box_md_hr
+dev.off()
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_box_matched_hr.png"), p_box_md_hr,width=8,height=4)
+```
+
+```{r}
+# wilcoxon to test difference in the distribution of BC dissimilarities between high HR and low HR groups of matched samples
+wt_md_hr.list<-lapply(cohortlist, function(c){
+  md<-matched_data.list[[c]]
+  md.dist<-dist_md_hr.list[[c]]
+  if(!is.null(md)){
+    md.dist_gat<-md.dist%>%
+      as.matrix()%>%
+      as.data.frame()%>%
+      rownames_to_column("SmplID1")%>%
+      gather(SmplID2,dist,-SmplID1)%>%
+      left_join(md,by=c("SmplID1"="SmplID"))%>%
+      select(SmplID1,SmplID2,dist,subclass,Cohort_precise,IBD)%>%
+      rename("subclass1"=subclass)%>%
+      rename("Cohort_precise1"=Cohort_precise)%>%
+      rename("IBD1"=IBD)%>%
+      left_join(md,by=c("SmplID2"="SmplID"))%>%
+      select(SmplID1,SmplID2,dist,subclass1,Cohort_precise1,IBD1,subclass,Cohort_precise,IBD)%>%
+      rename("subclass2"=subclass)%>%
+      rename("Cohort_precise2"=Cohort_precise)%>%
+      rename("IBD2"=IBD)%>%
+        filter(SmplID1!=SmplID2)%>%
+      mutate(IBD=ifelse(IBD1==IBD2,paste(IBD1),"control-IBD"))%>%
+      mutate(IBD=ifelse(IBD=="healthy","control",paste(IBD)))
+   
+    md.dist_gat$IBD<-as.factor(md.dist_gat$IBD)
+    wt<-coin::wilcox_test(dist ~ IBD, data=md.dist_gat%>%filter(IBD1==IBD2))
+    
+    
+  } else {
+    wt<-NULL
+  }
+  return(wt)
+})
+names(wt_md_hr.list)<-cohortlist
+
+
+wt_md_hr.listDF<-lapply(cohortlist, function(c){
+  wt<-wt_md_hr.list[[c]]
+  if(!is.null(wt)){
+    wt.df<-data.frame(
+      cohort=c,
+      p=coin::pvalue(wt),
+      Z=coin::statistic(wt),
+      n=nrow(matched_data.list[[c]])
+    )
+  } else {
+    wt.df<-NULL
+  }
+  return(wt.df)
+})
+names(wt_md_hr.listDF)<-cohortlist
+
+# collect wilcoxon results in df
+wt_md_hr.df<-do.call(rbind, wt_md_hr.listDF)
+wt_md_hr.df$padjust<-p.adjust(wt_md_hr.df$p, method = "BH")
+wt_md_hr.df<-wt_md_hr.df%>%
+  mutate(effectSize=Z/sqrt(n))
+wt_md_hr.df
+
+```
+
+
+### Compare high HR vs low HR within individuals
+
+```{r fig.height=4, fig.width=8}
+
+col_comp2<-c("darkorange1","khaki2","violet","darkorange1","khaki2","violet")
+names(col_comp2)<-c("HighHR","LowHR","LowHR-HighHR","flare-like","remission-like","flare-remission")
+
+# select individuals with 4 or more samples
+Ind_4plusTP<-(meta%>%
+  filter(Cohort_setup=="longitudinal")%>%
+  group_by(IndividualID)%>%
+  count()%>%
+  filter(n>3))$IndividualID
+
+# per individual
+meta_hr_ind_percentiles<-meta%>%
+  filter(Cohort_setup=="longitudinal")%>%
+  filter(IndividualID%in%Ind_4plusTP)%>%
+  group_by(IndividualID)%>%
+  summarize(HighHR_perc80=quantile(as.numeric(HumanRds), 0.8, na.rm=TRUE),LowHR_perc20=quantile(as.numeric(HumanRds), 0.2, na.rm=TRUE))
+
+meta_hr_ind_num<-meta%>%
+  left_join(meta_hr_ind_percentiles,by="IndividualID")%>%
+  mutate(HumanRds_group=ifelse(HumanRds>HighHR_perc80,"HighHR",ifelse(HumanRds<LowHR_perc20,"LowHR",NA)))%>% 
+  filter(!is.na(HumanRds_group))#%>%
+  #distinct(IndividualID, .keep_all = TRUE)
+
+meta_hr_ind_num$IndividualID%>%length()
+meta_hr_ind_num$IndividualID%>%unique()%>%length()
+
+###
+
+meta_hr_ind_num%>%
+  group_by(Cohort_precise)%>%
+  count(HumanRds_group)
+
+spec.tss.HL_hr_ind<-spec.tss[, which(names(spec.tss) %in% meta_hr_ind_num$SmplID)]
+spec.tss.HL_hr_ind<-spec.tss.HL_hr_ind[rowSums(spec.tss.HL_hr_ind) != 0,] # to remove empty rows otherwise vegan complains
+
+all(colnames(spec.tss.HL_hr_ind)==meta_hr_ind_num$SmplID)
+spec.tss.HL_hr_ind <- spec.tss.HL_hr_ind[,meta_hr_ind_num$SmplID]
+all(colnames(spec.tss.HL_hr_ind)==meta_hr_ind_num$SmplID)
+
+spec.tss.HL_hr_ind<-t(spec.tss.HL_hr_ind)
+dist.HL_hr_ind<-vegan::vegdist(spec.tss.HL_hr_ind, method = "bray")
+
+all(labels(dist.HL_hr_ind)==meta_hr_ind_num$SmplID)
+
+dist.HL_hr_ind_gat<-dist.HL_hr_ind%>%
+  as.matrix()%>%
+  as.data.frame()%>%
+  rownames_to_column("SmplID1")%>%
+  gather(SmplID2,dist,-SmplID1)%>%
+  left_join(meta_hr_ind_num,by=c("SmplID1"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group,Cohort_precise,IBD2,IndividualID)%>%
+  rename("HumanRds_group1"=HumanRds_group)%>%
+  rename("Cohort_precise1"=Cohort_precise)%>%
+  rename("IBD21"=IBD2)%>%
+  rename("IndividualID1"=IndividualID)%>%
+  left_join(meta_hr_ind_num,by=c("SmplID2"="SmplID"))%>%
+  select(SmplID1,SmplID2,dist,HumanRds_group1,Cohort_precise1,IBD21,IndividualID1,HumanRds_group,Cohort_precise,IBD2,IndividualID)%>%
+  rename("HumanRds_group2"=HumanRds_group)%>%
+  rename("Cohort_precise2"=Cohort_precise)%>%
+  rename("IBD22"=IBD2)%>%
+  rename("IndividualID2"=IndividualID)%>%
+  mutate(comparison=ifelse(HumanRds_group1==HumanRds_group2,HumanRds_group1,"LowHR-HighHR"))
+
+dist.HL_hr_ind_gat_intraInd<-
+  dist.HL_hr_ind_gat%>%
+  filter(IndividualID1==IndividualID2)%>%
+  filter(SmplID1!=SmplID2)%>%
+  mutate(cohort=gsub("Fang_UCSD_","",Cohort_precise1))%>%
+  mutate(cohort=gsub("cohort1000","1000",cohort))
+```
+
+```{r}
+# wilcoxon tests blocked by cohort
+# make sure variables are factors
+dist.HL_hr_ind_gat_intraInd$comparison<-as.factor(dist.HL_hr_ind_gat_intraInd$comparison)
+dist.HL_hr_ind_gat_intraInd$cohort<-as.factor(dist.HL_hr_ind_gat_intraInd$cohort)
+
+# low HR vs High HR
+wt_HL_hr_ind.Low_vs_High<-coin::wilcox_test(dist ~ comparison | cohort, data=dist.HL_hr_ind_gat_intraInd%>%filter(comparison%in%c("LowHR","HighHR")))
+wt_HL_hr_ind.Low_vs_High
+## effect size
+coin::statistic(wt_HL_hr_ind.Low_vs_High)/sqrt(dist.HL_hr_ind_gat_intraInd%>%filter(comparison%in%c("LowHR","HighHR"))%>%nrow())
+
+# low HR vs LowHR-HighHR
+wt_HL_hr_ind.Low_vs_LowHigh<-coin::wilcox_test(dist ~ comparison | cohort, data=dist.HL_hr_ind_gat_intraInd%>%filter(comparison%in%c("LowHR","LowHR-HighHR")))
+wt_HL_hr_ind.Low_vs_LowHigh
+
+# High HR vs LowHR-HighHR
+wt_HL_hr_ind.LowHigh_vs_High<-coin::wilcox_test(dist ~ comparison | cohort, data=dist.HL_hr_ind_gat_intraInd%>%filter(comparison%in%c("LowHR-HighHR","HighHR")))
+wt_HL_hr_ind.LowHigh_vs_High
+```
+
+```{r}
+# create boxplots 
+dist.HL_hr_ind_gat_intraInd<-dist.HL_hr_ind_gat_intraInd%>%
+  mutate(comparison2=gsub("HR","Iidx",comparison))
+col_comp3<-col_comp2
+names(col_comp3)<-gsub("HR","Iidx",names(col_comp2))
+p_iiv_cohorts<-ggplot(dist.HL_hr_ind_gat_intraInd, aes(x=comparison2,y=dist))+
+  geom_boxplot(aes(fill=comparison2),outlier.size = 0.1)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45,hjust=1))+
+  scale_fill_manual(values=col_comp3, breaks=names(col_comp3),labels=c("flare-like","remission-like","flare-remission","flare-like","remission-like","flare-remission"))+
+  ylab("Intra-individual BC dissimilarity")+
+  facet_grid(. ~ cohort)
+```
+
+```{r}
+# intra-individual dissimilarities, paired wilcoxon test with highHR and lowHR samples within individuals
+dist.HL_hr_ind_gat_intraInd_highHR<-dist.HL_hr_ind_gat_intraInd%>%
+  filter(comparison=="HighHR")%>%
+  select(c(dist,comparison,IndividualID1))
+dist.HL_hr_ind_gat_intraInd_lowHR<-dist.HL_hr_ind_gat_intraInd%>%
+  filter(comparison=="LowHR")%>%
+  select(c(dist,comparison,IndividualID1))
+dist.HL_hr_ind_gat_intraInd_lowhighHR<-dist.HL_hr_ind_gat_intraInd%>%
+  filter(comparison=="LowHR-HighHR")%>%
+  select(c(dist,comparison,IndividualID1))
+
+dist.HL_hr_ind_gat_intraInd_highlowpairs<-dist.HL_hr_ind_gat_intraInd_highHR%>%
+  inner_join(dist.HL_hr_ind_gat_intraInd_lowHR, by="IndividualID1")
+
+# calculate wilcoxon tests
+wilcox.test(dist.HL_hr_ind_gat_intraInd_highlowpairs$dist.x,dist.HL_hr_ind_gat_intraInd_highlowpairs$dist.y, paired=TRUE)
+wt_iiv_paired<-coin::wilcoxsign_test(dist.HL_hr_ind_gat_intraInd_highlowpairs$dist.x ~ dist.HL_hr_ind_gat_intraInd_highlowpairs$dist.y)
+coin::statistic(wt_iiv_paired)/sqrt(length(dist.HL_hr_ind_gat_intraInd_highlowpairs$dist.x))
+```
+
+```{r}
+# create plots
+p_iiv_all<-ggplot(dist.HL_hr_ind_gat_intraInd, aes(x=comparison,y=dist))+
+  geom_boxplot(aes(fill=comparison),outlier.size = 0.1)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45,hjust=1))+
+  scale_fill_manual(values=col_comp2, breaks=names(col_comp2),labels=c("flare-like","remission-like","flare-remission","flare-like","remission-like","flare-remission"))+
+  ylab("Intra-individual BC dissimilarity")
+
+dist.HL_hr_ind_gat_intraInd_highlowpairs_gat<-dist.HL_hr_ind_gat_intraInd_highlowpairs%>%
+  gather(pairs,dist,c(dist.x,dist.y))%>%
+  distinct(IndividualID1,pairs,.keep_all = TRUE)%>%
+  mutate(pairs=ifelse(pairs=="dist.x","flare-like","remission-like"))
+p_iiv_paired<-ggplot(dist.HL_hr_ind_gat_intraInd_highlowpairs_gat, aes(x = pairs, y = dist)) +
+  geom_boxplot(outlier.shape = NA, aes(fill = pairs)) +
+  geom_jitter(width = 0.1, alpha = 0.6) +
+  geom_line(aes(group = IndividualID1), alpha = 0.4) +
+  scale_fill_manual(values=col_comp2)+
+  theme_bw()+
+  theme(axis.text.x=element_blank(),axis.title.x=element_blank(),axis.ticks.x = element_blank())+
+  ylab("Intra-individual BC dissimilarity")
+
+p_iiv<-plot_grid(p_iiv_all+theme(legend.position="none", axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks.x=element_blank()),
+          p_iiv_cohorts+theme(legend.position="top",axis.text.x=element_blank(), axis.text.y=element_blank(),axis.title=element_blank(), axis.ticks=element_blank()),
+          nrow=1, align="h", axis="tb", rel_widths = c(1,4),labels=c("A","B"))
+p_iiv
+
+```
+
+```{r}
+# export plots
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/p_iiv_hlHR.pdf"), width=8,height=3)
+p_iiv
+dev.off()
+
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv_hlHR.pdf"), width=7,height=3)
+p_iiv_cohorts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
+dev.off()
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv_hlHR.png"), p_iiv_cohorts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
+,width=8,height=4)
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired_hlHR.png"), p_iiv_paired, width=4,height=4)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired_hlHR.pdf"), p_iiv_paired, width=4,height=4)
+
+saveRDS(dist.HL_hr_ind_gat_intraInd,paste0(PATHanalNov2023,"humanReads/dist.HL_hr_ind_gat_intraInd.rds"))
+```
+
+```{r}
+# create supplementary fig and export
+p_iiv_A<-p_iiv_cohorts+theme(legend.position="none",legend.title = element_blank(),axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
+p_iiv_B<-p_iiv_paired+theme(legend.position = "none")
+p_iiv_leg<-get_legend(p_iiv_cohorts+theme(legend.title = element_blank()))
+p_suppl_iiv_pairChrts<-plot_grid(p_iiv_A,
+          p_iiv_B,
+          p_iiv_leg,
+          rel_widths = c(4,1,1),
+          align = "h", axis = "tb",
+          labels=c("A","B"), nrow=1)
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired-cohorts_hlHR.png"), p_suppl_iiv_pairChrts, width=9,height=4)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired-cohorts_hlHR.pdf"), p_suppl_iiv_pairChrts, width=9,height=4)
+
+p_suppl_iiv_pairChrts
+```
+
+
+# Save workspace
+```{r, message =F, warning =F}
+save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/Temporal_variation.RData"))
+
+```

@@ -1,0 +1,325 @@
+---
+title: "DA_IBD_LM"
+author: "Stefano Romano"
+date: "May 15, 2022"
+output: 
+  html_document: 
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+# Install load packages
+```{r setup, include=FALSE}
+
+list.of.packages <- c("dplyr", "reshape2", "propr", "meta", "ggplot2", "lattice", "DHARMa", "broomExtra")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+
+list.of.bioc <- c("phyloseq", "microbiome")
+new.packages <- list.of.bioc[!(list.of.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages)) BiocManager::install(new.packages)
+
+library(meta)
+library(DHARMa)
+library(nlme)
+library(ggplot2)
+library(phyloseq)
+library(dplyr)
+library(microbiome)
+library(reshape2)
+library(meta)
+library(lattice)
+library(tidyverse)
+#library(broomExtra)
+
+```
+
+# Load and clean data
+Load the abundance file and the metadata
+```{r}
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+```
+
+
+```{r, message=F}
+
+spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+dim(spec)
+
+rownames(spec) %>% tail
+```
+
+The last row is "other". This will be used to calcualte the relative abundances but will then be removed
+```{r, message =F, warning =F}
+
+spec.tss<-as.data.frame(prop.table(as.matrix(spec), 2))
+# now remove other
+
+spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
+dim(spec.tss)
+
+```
+There are 1546 Species and 4839 samples
+
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+dim(meta)
+sapply(meta, class)
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+# the one below are not made aas factor, they will be made as a factor in the DA function
+# meta$age_category<-factor(meta$age_category, levels = c("child", "adult"))
+# meta$sex<-factor(meta$sex, levels = c("Female", "Male"))
+# load metasumamry
+meta.summary<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
+
+```
+
+## Chec if all samples hava the right metadata
+
+Check if the cohort is specified for all
+```{r, message =F, warning =F}
+meta$Cohort_precise %>% unique()
+meta$Cohort %>% unique()
+
+```
+
+All have both cohort and cohort precise
+
+## Check all samples have IBD assigned
+```{r, message =F, warning =F}
+meta$IBD %>% unique()
+meta$IBD2 %>% unique()
+
+```
+In IBD2 there is IBDU as I converted them into factors I ignored this entry and is treated as an NA now
+
+## Check all cohort have case_controls
+```{r, message =F, warning =F}
+meta %>%
+  dplyr::group_by(Cohort_precise) %>%
+  summarise(unique(IBD)) %>%
+  print(n = 40)
+
+```
+
+There are two cohorts with no controls:
+Fang_UCSD_IBD_Biobank,USA
+
+They will be used only for the comparison UC vs CD
+
+# Log Tranform data 
+We will log the data
+```{r, message =F, warning =F}
+# Transform in log10
+min<-sort(as.vector(as.matrix(spec.tss))[as.vector(as.matrix(spec.tss)) != 0])[1]
+spec.tss.log<-log2(spec.tss + min/100)
+```
+
+# Split data in cross-sectiona and long
+```{r, message =F, warning =F}
+# remove cohort with only IBD
+meta<-subset(meta, Cohort_precise != "Fang_UCSD_IBD_Biobank" & 
+                Cohort_precise != "USA")
+spec.tss.log<-spec.tss.log[, names(spec.tss.log) %in% meta$SmplID]
+
+
+meta.cross<-subset(meta, Cohort_setup == "crosssectional")
+meta.long<-subset(meta, Cohort_setup == "longitudinal")
+
+
+spec.cross<-spec.tss.log[,names(spec.tss.log) %in% meta.cross$SmplID]
+spec.long<-spec.tss.log[,names(spec.tss.log) %in% meta.long$SmplID]
+
+```
+
+## Split the data for cohort
+```{r, message =F, warning =F}
+############
+## CROSS ##
+##########
+spec.cross<-as.data.frame(t(spec.cross))
+all(spec.cross %>% rownames() == meta.cross$SmplID)
+
+# add the cohort column to split the data
+spec.cross$cohort<-meta.cross$Cohort_precise
+
+# split
+l_spec.cross<-split(spec.cross, f = as.factor(spec.cross$cohort))
+
+############
+## Long ##
+###########
+
+spec.long<-as.data.frame(t(spec.long))
+all(spec.long%>% rownames() == meta.long$SmplID)
+
+# add the cohort column to split the data
+spec.long$cohort<-meta.long$Cohort_precise
+
+# split
+l_spec.long<-split(spec.long, f = as.factor(spec.long$cohort))
+
+```
+
+# Build lm
+## Build linea models for cross-sectional 
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+# source the function
+source(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/DA_function.R"))
+
+l_spec.cross<-lapply(l_spec.cross, function(x) x[,-1*which(names(x) == "cohort")])
+
+df.cross<-calcualte_da_lm(list.df = l_spec.cross,
+                meta = meta.cross,
+                treat = "IBD",
+                meta.summary = meta.summary)
+
+saveRDS(df.cross, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/df.cross.rds"))
+df.cross<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/df.cross.rds"))
+
+```
+
+
+## Longitudinal samples
+
+# Explore the repeated samples
+```{r, message=F, warning =F}
+meta.long$visit_number<-as.factor(meta.long$days_after_first_visit)
+meta.long$dummy<-rep(1, nrow(meta.long))
+
+meta.long %>%
+  dplyr::group_by(Cohort_precise, IndividualID) %>%
+  dplyr::summarise(n = sum(dummy)) %>% 
+  print(n=40) %>%
+  ggplot(aes(Cohort_precise, n, fill = Cohort_precise)) +
+  geom_boxplot(alpha = 0.7) + 
+  scale_fill_brewer(type = "d") +
+  geom_jitter(width = 0.4, alpha = 0.7, aes(fill = Cohort_precise), size = 4, pch = 21) +
+  scale_color_brewer(type = "d") +
+  ggtitle("Number of samples per participant across cohorts")
+```
+
+The number fo samples per single person is very variable, form 1 to 25.
+
+
+# Build LM for longitudinal with resampling
+the mx number of samples per individual is 25.
+We resampled 20 time the data
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+df.row<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.20.txt"),sep="\t")
+
+# now, loop over the 20 repetition and perform the DA 20 times
+l.meta.boot<-vector(length = 20, mode = "list")
+for(i in 1:20) {
+  l.meta.boot[[i]]<- meta.long[which(meta.long$SmplID %in% df.row[,i]),] 
+}
+
+
+# subsample the spec abund matrix 20 times including only the samples in the list of metadata
+
+l_spec.long.boot<-l.meta.boot
+for(i in 1:20){
+  l_spec.long.boot[[i]]<-lapply(l_spec.long, function(x) x[rownames(x) %in% 
+                                                             l.meta.boot[[i]]$SmplID,])
+
+}
+
+# now to run this I have to run the analyses 20 times, I have basically to loop over the list above
+l.df.long.boost<-l_spec.long.boot
+
+l_spec.long.boot<-lapply(l_spec.long.boot, function(d) 
+  lapply(d, function(x) x[, -1*which(names(x) == "cohort")]))
+
+
+for(i in 1:20){
+  print(paste0("This is repetition number: ", i))
+  l.df.long.boost[[i]]<-calcualte_da_lm(list.df = l_spec.long.boot[[i]],
+                meta = l.meta.boot[[i]],
+                treat = "IBD", 
+                meta.summary = meta.summary)
+
+}
+
+saveRDS(l.df.long.boost,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.df.long.boost.rds"))
+
+```
+
+
+
+# Perform 20 meta-analyses
+```{r error=FALSE, message=FALSE, warning=FALSE}
+l.meta<-l.meta.boot
+
+for(i in 1:20){
+  tmp<-rbind.data.frame(l.df.long.boost[[i]]@df.da, df.cross@df.da)
+  bins<-unique(tmp$bin)
+  df<-data.frame(TE.random = vector(),
+                 seTE.random = vector(),
+                 lower.random = vector(),
+                 upper.random = vector(),
+                 pval.random = vector(),
+                 bins = vector())
+  for(b in 1:length(bins)){
+    tmp.bin<-tmp[tmp$bin == bins[b],]
+    #try(met<-metagen(TE=estimate, seTE=std.error,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort))
+    met<-try(metagen(TE=estimate, seTE=std.error,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort)) ### RAN ADAPTED FROM ABOVE LINE - check  !!
+    if(class(met)[1] != "try-error"){
+    met.df<-as.data.frame(c(met[c("TE.random","seTE.random", "lower.random", "upper.random", "pval.random")],bins= bins[b])) 
+    df<-rbind.data.frame(df, met.df)  
+    } else {df<-rbind.data.frame(df, c(NA, NA, NA, NA, NA, bins= bins[b]))}
+  }
+  
+  df$p.adjust<-p.adjust(df$pval.random, method = "fdr")
+  l.meta[[i]]<-df
+}
+
+saveRDS(l.meta, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.rds"))
+
+```
+
+# Subset sign bin and plot concordances
+The strategy below was taken from this post: https://stackoverflow.com/questions/53575257/make-binary-presence-absence-data-matrix-from-multiple-lists-in-r
+
+```{r, message =F, warning =F}
+l.meta.sign<-lapply(l.meta, function(x) subset(x,  p.adjust < 0.05))
+# create the datafram with the bins
+saveRDS(l.meta.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.sign.rds"))
+
+df.all<-do.call(rbind, l.meta.sign)
+df.all$in20<-vector(length = nrow(df.all))
+for(i in 1: nrow(df.all)){
+  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated, meaning one per mGS
+tax.sign<-df.all[df.all$in20 == TRUE,]$bins
+
+length(tax.sign)
+
+```
+
+
+# Select only sign taxa 
+```{r}
+l.meta.sign.20<-lapply(l.meta.sign, function(x) subset(x, bins %in% tax.sign))
+
+saveRDS(l.meta.sign.20, paste0(PATHanalNov2023, "DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.sign.20.rds"))
+```
+
+
+#Save workspace
+```{r, message =F, warning =F}
+dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/"), recursive = T)
+save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/DA_Nov2023.RData"))
+#load("~/OneDrive/work/HildebrandGroup/IBD/analysisNov2023/DA_analysis/November_2023_v3/R_analysis/RData/DA_Nov2023.RData")
+```

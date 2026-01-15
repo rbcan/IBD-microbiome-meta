@@ -1,0 +1,654 @@
+---
+title: "DA_IBD_LM"
+author: "Stefano Romano, adapted by Rebecca Ansorge"
+date: "13 November 2023"
+output: 
+  html_document: 
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+# Install load packages
+```{r setup, include=FALSE}
+
+list.of.packages <- c("dplyr", "reshape2", "ggplot2", "lattice")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+
+list.of.bioc <- c("phyloseq","microbiome")
+new.packages <- list.of.bioc[!(list.of.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages)) BiocManager::install(new.packages)
+
+
+library(ggplot2)
+library(phyloseq)
+library(dplyr)
+library(microbiome)
+library(reshape2)
+library(vegan)
+library(ggExtra)
+
+```
+
+```{r}
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+```
+
+# Load and clean data
+Load the abundance file and the metadata
+
+```{r, message=F}
+
+spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+dim(spec)
+
+
+rownames(spec) %>% tail
+```
+
+There are 1547 Species and 4839 samples
+The last row is "other". This will be used to calcualte the relative abundances but will then be removed
+```{r, message =F, warning =F}
+
+spec.tss<-as.data.frame(prop.table(as.matrix(spec), 2))
+
+
+# now remove other
+spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
+dim(spec.tss)
+
+
+# check NAs
+spec.na<-apply(spec,2, function(x) is.na(x))
+all(spec.na == FALSE) 
+xl<-apply(is.na(spec.tss), 2, which)
+na.samples<-gsub("[.].*", "", names(unlist(xl))) %>% unique()
+# these samples need to be removed
+
+if(length(na.samples)>0){
+  spec.tss<-spec.tss[, -1*which(names(spec.tss) %in% na.samples )]
+} else {
+  cat("no NAs found")
+}
+  
+# are there empty rows
+spec.tss[rowSums(spec.tss) == 0,] %>% rownames()
+
+```
+There are 1546 Species and 4839 samples
+
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.1TimeP.txt"), header = T, sep = "\t") # load a single time point metadata
+dim(meta)
+sapply(meta, class)
+
+# check how many UIBD and remove to make downstream analysis easier
+meta %>%
+  group_by(IBD2)%>%
+  count()
+meta<-meta[which(meta$IBD2!="IBDU"),]
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+# filter the species according to samples in the metadata
+spec.tss<-spec.tss[, which(names(spec.tss) %in% meta$SmplID)]
+dim(spec.tss)
+
+spec.tss[rowSums(spec.tss) == 0,] %>% rownames() # now there are species with 0. Remove them
+
+spec.tss<-spec.tss[rowSums(spec.tss) != 0,] 
+dim(spec.tss)
+
+spec.tss[,colSums(spec.tss) == 0] %>% colnames()
+spec.tss<-spec.tss[,colSums(spec.tss) != 0] # now there are samples with 0. Remove them
+dim(spec.tss)
+
+# I need to remove the same from the metadata
+meta<-meta[meta$SmplID %in% names(spec.tss),]
+meta<-meta[order(meta$SmplID),]
+spec.tss<-spec.tss[, order(names(spec.tss))]
+all(names(spec.tss) == meta$SmplID)
+dim(spec.tss)
+dim(meta)
+```
+
+## Chec if all samples hava the right metadata
+
+Check if the cohort is specified for all
+```{r, message =F, warning =F}
+meta$Cohort_precise %>% unique()
+meta$Cohort %>% unique()
+
+```
+
+All have both cohort and cohort precise
+
+## Check all samples have IBD assigned
+```{r, message =F, warning =F}
+meta$IBD %>% unique()
+meta$IBD2 %>% unique()
+
+```
+
+## Check case controls per cohort
+```{r, message =F, warning =F}
+meta %>%
+  dplyr::group_by(Cohort_precise) %>%
+  summarise(unique(IBD)) %>%
+  print(n = 40)
+
+```
+
+There are two cohorts with no controls:
+Fang_UCSD_IBD_Biobank,USA
+
+
+# Calculate BC
+
+## Make a plot using the single timepoints
+```{r}
+# just check that metadata and samples are the same
+dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/Figures"), recursive = T)
+
+# make ordination using phyloseq
+rownames(meta)<-meta$SmplID
+phy<-phyloseq(otu_table(spec.tss, taxa_are_rows = T), sample_data(meta))
+bc.spec.tss<-distance(phy, method = "bray")
+ord.bs<-ordinate(bc.spec.tss, physeq = phy, method = "PCoA")
+
+sc<-ord.bs$vectors[,1:2]  %>% as.data.frame() # extract the coordinates
+all(rownames(sc) == meta$SmplID)
+
+sc.m<-cbind.data.frame(sc, meta)
+sc.m$IBD2<-as.factor(sc.m$IBD2)
+(o.pcoa<-ggplot(sc.m, aes(Axis.1,   Axis.2, colour = IBD2)) +
+    geom_point(size = 4, alpha = 0.5) +
+    theme_minimal() +
+    scale_colour_manual(values = c("#50B4C8", "#ff6666", "#DACB01", "#A7A7A7")) +
+    xlab("PCo1 [14.5%]") +
+    ylab("PCo2 [6.2%]") +
+  theme(
+        plot.caption  = element_text(size = 10),
+        plot.title = element_text(size = 16, face = "bold"),
+        plot.subtitle = element_text(size =14),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1)) +
+    labs(title = "PCoA based on Bray-Curtis dissimilarities"))
+(og.cpoa<-ggMarginal(o.pcoa, groupFill = TRUE, size =8))
+
+saveRDS(sc.m,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pcoa.data.rds"))
+
+# perform dbRDA with conditioning per study
+meta$Cohort_precise<-as.factor(meta$Cohort_precise)
+ord.RDA<-ordinate(bc.spec.tss, physeq = phy, 
+                  method = "CAP", 
+                  formula = ~ Condition(Cohort_precise)) 
+
+sc<-scores(ord.RDA, display = "sites") %>% as.data.frame() # extract the coordinates
+all(rownames(sc) == meta$SmplID)
+
+sc.m<-cbind.data.frame(sc, meta)
+sc.m$IBD2<-as.factor(sc.m$IBD2)
+(o<-ggplot(sc.m, aes(MDS2, MDS1, colour = IBD2)) +
+    geom_point(size = 4, alpha = 0.5) +
+    theme_minimal() +
+    scale_colour_manual(values = c("#50B4C8", "#ff6666", "#DACB01", "#A7A7A7")) +
+    xlab("MDS1 [5.4%]") +
+    ylab("MDS2 [4.8%]") +
+  theme(
+        plot.caption  = element_text(size = 10),
+        plot.title = element_text(size = 16, face = "bold"),
+        plot.subtitle = element_text(size =14),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1))+
+        labs(title = "dbRDA based on Bray-Curtis dissimilarities"))
+
+(og<-ggMarginal(o, groupFill = TRUE, size =8))
+saveRDS(sc.m,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.dbrda.data.rds"))
+```
+
+# Permanova on first time-point data
+
+```{r}
+set.seed(222)
+perm<-how(blocks = meta$Cohort_precise, nperm = 999)
+ad.bc<-adonis2(formula = bc.spec.tss ~ meta$IBD, data = meta, parallel = T, permutations = perm)
+ad.bc
+```
+
+2.9% of variance explained (IBD-HC) when conditioned by Cohort_precise.
+
+
+# Pairwise permanova for CD/UC/HC comparisons
+
+```{r}
+library(pairwiseAdonis)
+set.seed(222)
+ad.bc.ibd2<-pairwise.adonis2(bc.spec.tss ~ IBD2, data = meta, strata = 'Cohort_precise')
+ad.bc.ibd2
+```
+
+All pairwise comparisons are significant with Cohort_precise as strata.
+CD vs UC account for 1.0% of variation
+CD vs healthy account for 3.9% of variation
+UC vs healthy account for 1.7% of variation
+
+```{r}
+set.seed(222)
+ad.bc.cohort<-adonis2(formula = bc.spec.tss ~ meta$Cohort_precise, data = meta, parallel = T)
+ad.bc.cohort
+
+```
+
+Cohort_precise explains 12.4% of the variation
+
+```{r}
+# Save permanova results in RDS
+saveRDS(ad.bc,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmva.bc.ibd.rds"))
+saveRDS(ad.bc.ibd2,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmvaPair.bc.ibd2.rds"))
+saveRDS(ad.bc.cohort,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmva.bc.cohort.rds"))
+```
+
+# Calculate distance from centroids
+# Reload and clean data
+Load the abundance file and the metadata
+
+```{r, message=F}
+
+spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+dim(spec)
+
+```
+
+```{r, message =F, warning =F}
+
+spec.tss<-as.data.frame(prop.table(as.matrix(spec), 2))
+
+
+# now remove other
+spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
+dim(spec.tss)
+
+
+# check NAs
+spec.na<-apply(spec,2, function(x) is.na(x))
+all(spec.na == FALSE) 
+xl<-apply(is.na(spec.tss), 2, which)
+na.samples<-gsub("[.].*", "", names(unlist(xl))) %>% unique()
+# this samples need to be removed
+
+if(length(na.samples)>0){
+  spec.tss<-spec.tss[, -1*which(names(spec.tss) %in% na.samples )]
+} else {
+  cat("no NAs")
+}
+
+# are there empty rows
+spec.tss[rowSums(spec.tss) == 0,] %>% rownames()
+
+spec.tss[,colSums(spec.tss) == 0] %>% colnames()
+spec.tss<-spec.tss[,colSums(spec.tss) != 0] # now there are samples with 0. Remove them
+dim(spec.tss)
+```
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t") # load a single time point metadata
+dim(meta)
+sapply(meta, class)
+
+# check how many UIBD and remove 
+meta %>%
+  group_by(IBD2)%>%
+  count()
+meta<-meta[which(meta$IBD2!="IBDU"),]
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+# filter the species according to samples in the meta
+spec.tss<-spec.tss[, which(names(spec.tss) %in% meta$SmplID)]
+dim(spec.tss)
+
+# I need to remove the same from the metadata
+meta<-meta[meta$SmplID %in% names(spec.tss),]
+meta<-meta[order(meta$SmplID),]
+spec.tss<-spec.tss[, order(names(spec.tss))]
+all(names(spec.tss) == meta$SmplID)
+
+```
+
+
+# Remove samples with only one condition
+```{r}
+meta$Cohort_precise <-as.character(meta$Cohort_precise)
+meta<-subset(meta, Cohort_precise != "Fang_UCSD_IBD_Biobank" | Cohort_precise != "USA")
+spect.tss<-spec.tss[, names(spec.tss) %in% meta$SmplID]
+
+```
+
+
+# Split data in cross-sectional and long
+```{r, message =F, warning =F}
+meta.cross<-subset(meta, Cohort_setup == "crosssectional")
+meta.long<-subset(meta, Cohort_setup == "longitudinal")
+
+
+spec.cross<-spec.tss[,names(spec.tss) %in% meta.cross$SmplID]
+spec.long<-spec.tss[,names(spec.tss) %in% meta.long$SmplID]
+
+```
+
+## Split the data for cohort
+```{r, message =F, warning =F}
+############
+## CROSS ##
+##########
+spec.cross<-as.data.frame(t(spec.cross))
+all(spec.cross %>% rownames() == meta.cross$SmplID)
+
+# add the cohort column to split the data
+spec.cross$cohort<-meta.cross$Cohort_precise
+
+# split
+l_spec.cross<-split(spec.cross, f = as.factor(spec.cross$cohort))
+
+############
+## Long ##
+###########
+
+spec.long<-as.data.frame(t(spec.long))
+all(spec.long%>% rownames() == meta.long$SmplID)
+
+# add the cohort column to split the data
+spec.long$cohort<-meta.long$Cohort_precise
+
+# split
+l_spec.long<-split(spec.long, f = as.factor(spec.long$cohort))
+
+```
+
+
+## cross-sectional
+```{r}
+l_spec.cross.bc<-lapply(l_spec.cross, function(x) vegdist(x[,-1*which(names(x) == "cohort")], method = "bray"))
+# use betadisp
+l_spec.cross.betad<-l_spec.cross.bc
+l_spec.cross.distances<-l_spec.cross.betad
+for(i in 1:length(l_spec.cross.bc)){
+  meta.tmps<-meta.cross[meta.cross$SmplID %in% rownames(l_spec.cross[[i]]),]
+  l_spec.cross.betad[[i]]<-betadisper(l_spec.cross.bc[[i]], group = meta.tmps$IBD %>% as.factor(), type = "centroid")
+
+  df<-data.frame(samples = names(l_spec.cross.betad[[i]]$distances),
+                 distances_ccentr = l_spec.cross.betad[[i]]$distances)
+  df<-df[order(df$samples),]
+  meta.tmps<-meta.tmps[order(meta.tmps$SmplID),]
+  if(all(meta.tmps$SmplID != df$samples)){
+    stop("Meta and samples are not in same order")
+  }
+  df$IBD<-meta.tmps$IBD
+  df$IBD2<-meta.tmps$IBD2
+  df$cohort<-meta.tmps$Cohort_precise
+  l_spec.cross.distances[[i]]<-df
+}
+
+# merge
+df_all_cross<-do.call(rbind, l_spec.cross.distances)
+saveRDS(df_all_cross,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.df_all_cross.rds"))
+```
+
+## longitudinal
+
+Edit: Use the resampling dataset from the DA analysis for the beta-div
+
+```{r}
+# import the dataframe with re-sampling samples IBD/healthy
+resam.ibd.df<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.20.txt"))
+unique(resam.ibd.df$Cohort)
+resam.ibd2.df<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.CDUC.20.txt"))
+unique(resam.ibd2.df$Cohort)
+```
+
+#### IBD 
+
+```{r}
+# remove the ones with only IBD for now
+l_spec.long.ibd<-l_spec.long
+l_spec.long.ibd<-l_spec.long.ibd[names(l_spec.long.ibd) %in% c("USA","Fang_UCSD_IBD_Biobank") == FALSE] 
+
+# calculate distance from centroid for each resampling
+l_spec.long.distances.df.20<-lapply(names(resam.ibd.df[1:20]), function(n){
+  l_spec.long.bc<-lapply(l_spec.long.ibd, function(x) {
+    y<-x[which(rownames(x)%in%resam.ibd.df[,n]),]
+    vegdist(y[,-1*which(names(y) == "cohort")], method = "bray")
+    })
+  
+  # use betadisp
+  l_spec.long.betad<-l_spec.long.bc
+  l_spec.long.distances<-l_spec.long.betad
+  for(i in 1:length(l_spec.long.bc)){
+    meta.tmps<-meta.long[meta.long$SmplID %in% rownames(l_spec.long.ibd[[i]]),]%>%
+      filter(SmplID%in%resam.ibd.df[,n])
+    l_spec.long.betad[[i]]<-betadisper(l_spec.long.bc[[i]], group = meta.tmps$IBD %>% as.factor(), type = "centroid")
+  
+    df<-data.frame(samples = names(l_spec.long.betad[[i]]$distances),
+                   distances_ccentr = l_spec.long.betad[[i]]$distances)
+    df<-df[order(df$samples),]
+    meta.tmps<-meta.tmps[order(meta.tmps$SmplID),]
+    if(all(meta.tmps$SmplID != df$samples)){
+      stop("Meta and samples are not in same order")
+    }
+    df$IBD<-meta.tmps$IBD
+    df$IBD2<-meta.tmps$IBD2
+    df$cohort<-meta.tmps$Cohort_precise
+    df$iteration<-n
+    l_spec.long.distances[[i]]<-df
+  }
+  l_spec.long.distances.df<-do.call(rbind, l_spec.long.distances)
+  l_spec.long.distances.df
+})
+
+saveRDS(l_spec.long.distances.df.20,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS//beta.l_spec.long.distances.df.20.rds"))
+```
+
+#### IBD2
+
+```{r}
+l_spec.long.ibd2<-l_spec.long
+
+# calculate distance from centroid for each resampling
+l_spec.long.distances.df.20ibd2<-lapply(names(resam.ibd2.df[1:20]), function(n){
+  l_spec.long.bc<-lapply(l_spec.long.ibd2, function(x) {
+    y<-x[which(rownames(x)%in%resam.ibd2.df[,n]),]
+    vegdist(y[,-1*which(names(y) == "cohort")], method = "bray")
+    })
+  
+  # use betadisp
+  l_spec.long.betad<-l_spec.long.bc
+  l_spec.long.distances<-l_spec.long.betad
+  for(i in 1:length(l_spec.long.bc)){
+    meta.tmps<-meta.long[meta.long$SmplID %in% rownames(l_spec.long.ibd2[[i]]),]%>%
+      filter(SmplID%in%resam.ibd2.df[,n])
+    l_spec.long.betad[[i]]<-betadisper(l_spec.long.bc[[i]], group = meta.tmps$IBD %>% as.factor(), type = "centroid")
+  
+    df<-data.frame(samples = names(l_spec.long.betad[[i]]$distances),
+                   distances_ccentr = l_spec.long.betad[[i]]$distances)
+    df<-df[order(df$samples),]
+    meta.tmps<-meta.tmps[order(meta.tmps$SmplID),]
+    if(all(meta.tmps$SmplID != df$samples)){
+      stop("Meta and samples are not in same order")
+    }
+    df$IBD<-meta.tmps$IBD
+    df$IBD2<-meta.tmps$IBD2
+    df$cohort<-meta.tmps$Cohort_precise
+    df$iteration<-n
+    l_spec.long.distances[[i]]<-df
+  }
+  l_spec.long.distances.df<-do.call(rbind, l_spec.long.distances)
+  l_spec.long.distances.df
+})
+
+saveRDS(l_spec.long.distances.df.20ibd2,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.l_spec.long.distances.df.20ibd2.rds"))
+```
+
+Distances from control centroids versus inflammation index
+
+```{r}
+# all samples included per cohort
+# get control centroids
+
+# cross
+l_spec.cross.betad2<-list(l_spec.cross.bc)
+l_spec.cross.CTRLdistances<-l_spec.cross.betad2
+
+for(i in 1:length(l_spec.cross.bc)){
+  print(i)
+  meta.tmps<-meta.cross[meta.cross$SmplID %in% rownames(l_spec.cross[[i]]),]
+  l_spec.cross.betad2[[i]]<-betadisper(l_spec.cross.bc[[i]], group = meta.tmps$IBD %>% as.factor(), type = "centroid")
+
+  
+  centroidsCTRL <- l_spec.cross.betad2[[1]]$centroids["healthy",] # get control centroid coordinates
+
+  # Use principal coordinates of all samples
+  sample_coords <- l_spec.cross.betad2[[i]]$vectors
+  
+  # Function to calculate Euclidean distance to BF centroid
+  dist_to_CTRL <- apply(sample_coords, 1, function(x) sqrt(sum((x - centroidsCTRL)^2)))
+
+  df<-data.frame(samples = names(dist_to_CTRL),
+                 distances_ccentrCTRL = dist_to_CTRL)
+  df<-df[order(df$samples),]
+  meta.tmps<-meta.tmps[order(meta.tmps$SmplID),]
+  if(all(meta.tmps$SmplID != df$samples)){
+    stop("Meta and samples are not in same order")
+  }
+  df$IBD<-meta.tmps$IBD
+  df$IBD2<-meta.tmps$IBD2
+  df$cohort<-meta.tmps$Cohort_precise
+  l_spec.cross.CTRLdistances[[i]]<-df
+}
+
+# merge
+CTRLdistances.cross<-do.call(rbind, l_spec.cross.CTRLdistances)
+
+#long
+l_spec.long.bc20<-lapply(names(resam.ibd.df[1:20]), function(n){
+  l_spec.long.bc<-lapply(l_spec.long.ibd, function(x) {
+    y<-x[which(rownames(x)%in%resam.ibd.df[,n]),]
+    vegdist(y[,-1*which(names(y) == "cohort")], method = "bray")
+    })
+  
+  # use betadisp
+  l_spec.long.betad2<-l_spec.long.bc
+  l_spec.long.CTRLdistances<-l_spec.long.betad2
+  
+  for(i in 1:length(l_spec.long.bc)){
+    meta.tmps<-meta.long[meta.long$SmplID %in% rownames(l_spec.long.ibd[[i]]),]%>%
+      filter(SmplID%in%resam.ibd.df[,n])
+    l_spec.long.betad2[[i]]<-betadisper(l_spec.long.bc[[i]], group = meta.tmps$IBD %>% as.factor(), type = "centroid")
+  
+  centroidsCTRL <- l_spec.long.betad2[[1]]$centroids["healthy",] # get control centroid coordinates
+
+  # Use principal coordinates of all samples
+  sample_coords <- l_spec.long.betad2[[i]]$vectors
+  
+  # Function to calculate Euclidean distance to BF centroid
+  dist_to_CTRL <- apply(sample_coords, 1, function(x) sqrt(sum((x - centroidsCTRL)^2)))
+    
+    df<-data.frame(samples = names(dist_to_CTRL),
+                 distances_ccentrCTRL = dist_to_CTRL)
+  df<-df[order(df$samples),]
+  meta.tmps<-meta.tmps[order(meta.tmps$SmplID),]
+  if(all(meta.tmps$SmplID != df$samples)){
+    stop("Meta and samples are not in same order")
+  }
+  df$IBD<-meta.tmps$IBD
+  df$IBD2<-meta.tmps$IBD2
+  df$cohort<-meta.tmps$Cohort_precise
+  df$iteration<-n
+  l_spec.long.CTRLdistances[[i]]<-df
+  }
+  l_spec.long.CTRLdistances.df<-do.call(rbind, l_spec.long.CTRLdistances)
+  l_spec.long.CTRLdistances.df
+})
+
+```
+
+```{r}
+#load inflammation index
+humanReads<-read.delim2(paste0(PATHanalNov2023,"humanReads/IBD2022.4.map"), comment.char = "#", header=FALSE)%>%
+  select(1,36)
+colnames(humanReads)<-c("SmplID","HumanRds")
+head(humanReads)
+
+meta_hr<-inner_join(meta,humanReads,by="SmplID")
+meta_hr$HumanRds<-as.numeric(meta_hr$HumanRds)
+
+# calculate human read ranks
+meta_hr_ranked <- meta_hr %>%
+  group_by(Cohort_precise) %>%
+  mutate(rankHumanRds = rank(HumanRds)) %>%
+  ungroup()
+```
+
+```{r}
+# join human read ranks with distance from control centroids
+CTRLdistances<-rbind(CTRLdistances.cross%>%mutate(iteration="cross"), l_spec.long.bc20[[1]])
+CTRLdistances.crossLongS1_hrRanks<-CTRLdistances%>%
+  rename(SmplID=samples)%>%
+  left_join(meta_hr_ranked, by="SmplID")%>%
+  mutate(IBD=as.character(IBD.x))%>%
+  mutate(IBD=as.character(ifelse(IBD=="healthy","control",IBD)))
+
+col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4")
+names(col_IBD2)<-c("IBD","CD","UC","healthy","control")
+
+```
+
+
+```{r}
+# use actual inflammation values logged
+# plot of first resampling
+p_ctrlDitst_HRlog<-ggplot(CTRLdistances.crossLongS1_hrRanks,aes(x=log2(HumanRds), y=log2(distances_ccentrCTRL)))+
+  geom_point(aes(color=IBD), alpha=0.7)+  
+  geom_smooth(method = "lm", color="black", se = FALSE)+
+  scale_color_manual(values=col_IBD2)+
+  ylab("log2(Distances to control centroids)")+
+  xlab("log2(Inflammation index)")+
+  facet_wrap(.~Cohort_precise, scales = "free")+
+  theme_bw()
+p_ctrlDitst_HRlog
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_ctrlDist_HRlog.png"),p_ctrlDitst_HRlog, width=8, height=6)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_ctrlDist_HRlog.pdf"),p_ctrlDitst_HRlog, width=8, height=6)
+```
+
+```{r}
+# test with linear model random effect cohort
+ctrlDist.vec<-CTRLdistances.crossLongS1_hrRanks$distances_ccentrCTRL
+hr.vec<-CTRLdistances.crossLongS1_hrRanks$HumanRds
+cohort.vec<-as.factor(CTRLdistances.crossLongS1_hrRanks$Cohort_precise)
+
+lmm_ctrlDitst_HRlog2<-lmerTest::lmer(ctrlDist.vec ~ log2(hr.vec) +(1|cohort.vec))
+summary_lmm_ctrlDitst_HRlog2<-summary(lmm_ctrlDitst_HRlog2)
+summary_lmm_ctrlDitst_HRlog2
+```
+
+#Save workspace
+```{r, message =F, warning =F}
+save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/Beta_IBD_time.RData"))
+```

@@ -1,0 +1,401 @@
+---
+title: "DA_IBD_LM"
+author: "Stefano Romano; adapted by R Ansorge"
+date: "May 15, 2022"
+output: 
+  html_document: 
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+# Install load packages
+```{r setup, include=FALSE}
+
+list.of.packages <- c("dplyr", "reshape2", "propr", "meta", "ggplot2", "lattice", "DHARMa", "broomExtra")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+
+list.of.bioc <- c("phyloseq", "microbiome")
+new.packages <- list.of.bioc[!(list.of.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages)) BiocManager::install(new.packages)
+
+library(meta)
+library(DHARMa)
+library(nlme)
+library(ggplot2)
+library(phyloseq)
+library(dplyr)
+library(microbiome)
+library(reshape2)
+library(meta)
+library(lattice)
+#library(broomExtra)
+
+```
+
+```{r}
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+```
+# Load and clean data
+Load the abundance file and the metadata
+
+```{r, message=F}
+
+spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+
+
+dim(spec)
+
+rownames(spec) %>% tail
+```
+
+The last row is "other". This will be used to calcualte the relative abundances but will then be removed
+```{r, message =F, warning =F}
+
+spec.tss<-as.data.frame(prop.table(as.matrix(spec), 2))
+# now remove other
+
+spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
+```
+
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+dim(meta)
+sapply(meta, class)
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+
+# the one below are not made aas factor, they will be made as a factor in the DA function
+# meta$age_category<-factor(meta$age_category, levels = c("child", "adult"))
+# meta$sex<-factor(meta$sex, levels = c("Female", "Male"))
+# load metasumamry
+meta.summary<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
+
+```
+
+## Chec if all samples hava the right metadata
+
+Check if the cohort is specified for all
+```{r, message =F, warning =F}
+meta$Cohort_precise %>% unique()
+meta$Cohort %>% unique()
+
+```
+
+All have both cohort and cohort precise
+
+## Check all samples have IBD assigned
+```{r, message =F, warning =F}
+meta$IBD %>% unique()
+meta$IBD2 %>% unique()
+
+```
+In IBD2 there is IBDU as I converted them into factors I ignored this entry and is treated as an NA now
+
+# Log Tranform data 
+We will log the data
+```{r, message =F, warning =F}
+# Transform in log10
+min<-sort(as.vector(as.matrix(spec.tss))[as.vector(as.matrix(spec.tss)) != 0])[1]
+spec.tss.log<-log2(spec.tss + min/100)
+```
+
+# Log Tranform data 
+We will log the data
+```{r, message =F, warning =F}
+# Transform in log10
+min<-sort(as.vector(as.matrix(spec.tss))[as.vector(as.matrix(spec.tss)) != 0])[1]
+spec.tss.log<-log2(spec.tss + min/100)
+```
+
+# Split data in cross-sectiona and long
+```{r, message =F, warning =F}
+meta.cross<-subset(meta, Cohort_setup == "crosssectional")
+meta.long<-subset(meta, Cohort_setup == "longitudinal")
+
+
+spec.cross<-spec.tss.log[,names(spec.tss.log) %in% meta.cross$SmplID]
+spec.long<-spec.tss.log[,names(spec.tss.log) %in% meta.long$SmplID]
+
+```
+
+## Split the data for cohort
+```{r, message =F, warning =F}
+############
+## CROSS ##
+##########
+spec.cross<-as.data.frame(t(spec.cross))
+all(spec.cross %>% rownames() == meta.cross$SmplID)
+
+# add the cohort column to split the data
+spec.cross$cohort<-meta.cross$Cohort_precise
+
+# split
+l_spec.cross<-split(spec.cross, f = as.factor(spec.cross$cohort))
+
+############
+## Long ##
+###########
+
+spec.long<-as.data.frame(t(spec.long))
+all(spec.long%>% rownames() == meta.long$SmplID)
+
+# add the cohort column to split the data
+spec.long$cohort<-meta.long$Cohort_precise
+
+# split
+l_spec.long<-split(spec.long, f = as.factor(spec.long$cohort))
+
+```
+
+# Build lm
+## Build linea models for cross-sectional 
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+# source the function
+source(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/DA_function_UCvsCD.R"))
+
+l_spec.cross<-lapply(l_spec.cross, function(x) x[,-1*which(names(x) == "cohort")])
+
+df.cross<-calcualte_da_lm(list.df = l_spec.cross,
+                meta = meta.cross,
+                treat = "IBD2",
+                meta.summary = meta.summary)
+
+saveRDS(df.cross, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/df.cross.uc_cd.rds"))
+
+```
+
+
+# Build LM for longitudinal with resampling
+Load resamplings
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+
+df.row<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.CDUC.20.txt",sep="\t"))
+
+# now, loop over the 20 repetition and perform the DA 20 times
+l.meta.boot<-vector(length = 20, mode = "list")
+for(i in 1:20) {
+  l.meta.boot[[i]]<- meta.long[which(meta.long$SmplID %in% df.row[,i]),] 
+}
+
+
+# subsample the spec abund matrix 20 times including only the samples in the list of metadata
+
+l_spec.long.boot<-l.meta.boot
+for(i in 1:20){
+  l_spec.long.boot[[i]]<-lapply(l_spec.long, function(x) x[rownames(x) %in% 
+                                                             l.meta.boot[[i]]$SmplID,])
+
+}
+
+# now to run this I have to run the analyses 20 times, I have basically to loop over the list above
+l.df.long.boost<-l_spec.long.boot
+l_spec.long.boot<-lapply(l_spec.long.boot, function(d) 
+  lapply(d, function(x) x[, -1*which(names(x) == "cohort")]))
+for(i in 1:20){
+  print(paste0("This is repetition number: ", i))
+  l.df.long.boost[[i]]<-calcualte_da_lm(list.df = l_spec.long.boot[[i]],
+                meta = l.meta.boot[[i]],
+                treat = "IBD2", 
+                meta.summary = meta.summary)
+
+}
+
+saveRDS(l.df.long.boost, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.df.long.boost.uc_cd.rds"))
+
+```
+# Select only the same comparisons
+
+```{r}
+uc_cd<-subset(df.cross@df.da, contrast == "UC - CD")
+uc_hc<-subset(df.cross@df.da, contrast == "healthy - UC")
+cd_hc<-subset(df.cross@df.da, contrast == "healthy - CD")
+```
+
+
+# Perform 20 meta-analyses
+############
+#  UC vs CD
+##########
+
+```{r error=FALSE, message=FALSE, warning=FALSE}
+
+l.meta_uccd<-l.meta.boot
+
+for(i in 1:20){
+  tmp<-rbind.data.frame(subset(l.df.long.boost[[i]]@df.da, contrast == "UC - CD"), uc_cd) #adapted to UC -CD from healthy - CD
+  bins<-unique(tmp$bin)
+  df<-data.frame(TE.random = vector(),
+                 seTE.random = vector(),
+                 lower.random = vector(),
+                 upper.random = vector(),
+                 pval.random = vector(),
+                 bins = vector())
+  for(b in 1:length(bins)){
+    tmp.bin<-tmp[tmp$bin == bins[b],]
+    met<-try(metagen(TE=estimate, seTE=SE,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort)) # adapted RAN try command
+    if(class(met)[1] != "try-error"){
+    met.df<-as.data.frame(c(met[c("TE.random","seTE.random", "lower.random", "upper.random", "pval.random")],bins= bins[b])) 
+    df<-rbind.data.frame(df, met.df)  
+    } else {df<-rbind.data.frame(df, c(NA, NA, NA, NA, NA, bins= bins[b]))}
+  }
+  
+  df$p.adjust<-p.adjust(df$pval.random, method = "fdr")
+  l.meta_uccd[[i]]<-df
+}
+#saveRDS(l.meta_uccd, "~/Documents/IBD/March_2023/R_analysis/RDS/l.meta_uccd.rds")
+saveRDS(l.meta_uccd, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.rds"))
+
+
+l.meta_uccd.sign<-lapply(l.meta_uccd, function(x) subset(x,  p.adjust < 0.05))
+# create the datafram with the bins
+saveRDS(l.meta_uccd.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.sign.rds"))
+
+df.all<-do.call(rbind, l.meta_uccd.sign)
+df.all$in20<-vector(length = nrow(df.all))
+for(i in 1: nrow(df.all)){
+  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated, meaning one per mGS
+tax.sign<-df.all[df.all$in20 == TRUE,]$bins
+
+length(tax.sign)
+l.meta_uccd.sign.20<-lapply(l.meta_uccd.sign, function(x) subset(x, bins %in% tax.sign))
+#dir.create("~/Documents/IBD/March_2023/R_analysis/RDS/", recursive = T)
+dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/", recursive = T))
+
+#saveRDS(l.meta_uccd.sign.20, "~/Documents/IBD/March_2023/R_analysis/RDS/l.meta_uccd.sign.20.rds")
+saveRDS(l.meta_uccd.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.sign.20.rds"))
+
+#tax<-read.delim("~/Documents/IBD/March_2023/Raw_data/IBD.MGStaxa_March2023.txt", header = T, row.names = 1)
+tax<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGStaxa.txt"), header = T, row.names = 1)
+
+tax[tax.sign,]
+#saveRDS(tax[tax.sign,], "~/Documents/IBD/March_2023/R_analysis/RDS/l.meta_uccd.sign.20.taxa.rds")
+saveRDS(tax[tax.sign,], paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.sign.20.taxa.rds"))
+
+```
+
+############
+#  UC vs controls
+##########
+
+```{r error=FALSE, message=FALSE, warning=FALSE}
+
+l.meta_uccontrols<-l.meta.boot
+
+for(i in 1:20){
+  tmp<-rbind.data.frame(subset(l.df.long.boost[[i]]@df.da, contrast == "healthy - UC"), uc_hc)
+  bins<-unique(tmp$bin)
+  df<-data.frame(TE.random = vector(),
+                 seTE.random = vector(),
+                 lower.random = vector(),
+                 upper.random = vector(),
+                 pval.random = vector(),
+                 bins = vector())
+  for(b in 1:length(bins)){
+    tmp.bin<-tmp[tmp$bin == bins[b],]
+    met<-try(metagen(TE=estimate, seTE=SE,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort))# adapted RAN try command
+    if(class(met)[1] != "try-error"){
+    met.df<-as.data.frame(c(met[c("TE.random","seTE.random", "lower.random", "upper.random", "pval.random")],bins= bins[b])) 
+    df<-rbind.data.frame(df, met.df)  
+    } else {df<-rbind.data.frame(df, c(NA, NA, NA, NA, NA, bins= bins[b]))}
+  }
+  
+  df$p.adjust<-p.adjust(df$pval.random, method = "fdr")
+  l.meta_uccontrols[[i]]<-df
+}
+saveRDS(l.meta_uccontrols, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.rds"))
+
+
+l.meta_uccontrols.sign<-lapply(l.meta_uccontrols, function(x) subset(x,  p.adjust < 0.05))
+# create the datafram with the bins
+saveRDS(l.meta_uccontrols.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.sign.rds"))
+
+df.all<-do.call(rbind, l.meta_uccontrols.sign)
+df.all$in20<-vector(length = nrow(df.all))
+for(i in 1: nrow(df.all)){
+  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated
+tax.sign<-df.all[df.all$in20 == TRUE,]$bins
+
+length(tax.sign)
+l.meta_uccontrols.sign.20<-lapply(l.meta_uccontrols.sign, function(x) subset(x, bins %in% tax.sign))
+
+saveRDS(l.meta_uccontrols.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.sign.20.rds"))
+
+tax[tax.sign,]
+saveRDS(tax[tax.sign,], paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.sign.20.taxa.rds"))
+
+```
+
+############
+#  CD vs controls
+##########
+
+```{r error=FALSE, message=FALSE, warning=FALSE}
+
+l.meta_cdcontrols<-l.meta.boot
+
+for(i in 1:20){
+  tmp<-rbind.data.frame(subset(l.df.long.boost[[i]]@df.da,  contrast == "healthy - CD"), cd_hc)
+  bins<-unique(tmp$bin)
+  df<-data.frame(TE.random = vector(),
+                 seTE.random = vector(),
+                 lower.random = vector(),
+                 upper.random = vector(),
+                 pval.random = vector(),
+                 bins = vector())
+  for(b in 1:length(bins)){
+    tmp.bin<-tmp[tmp$bin == bins[b],]
+    met<-try(metagen(TE=estimate, seTE=SE,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort))# adapted RAN try command
+    if(class(met)[1] != "try-error"){
+    met.df<-as.data.frame(c(met[c("TE.random","seTE.random", "lower.random", "upper.random", "pval.random")],bins= bins[b])) 
+    df<-rbind.data.frame(df, met.df)  
+    } else {df<-rbind.data.frame(df, c(NA, NA, NA, NA, NA, bins= bins[b]))}
+  }
+  
+  df$p.adjust<-p.adjust(df$pval.random, method = "fdr")
+  l.meta_cdcontrols[[i]]<-df
+}
+saveRDS(l.meta_cdcontrols, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.rds"))
+
+
+l.meta_cdcontrols.sign<-lapply(l.meta_cdcontrols, function(x) subset(x,  p.adjust < 0.05))
+# create the datafram with the bins
+saveRDS(l.meta_cdcontrols.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.sign.rds"))
+
+df.all<-do.call(rbind, l.meta_cdcontrols.sign)
+df.all$in20<-vector(length = nrow(df.all))
+for(i in 1: nrow(df.all)){
+  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated
+tax.sign<-df.all[df.all$in20 == TRUE,]$bins
+
+length(tax.sign)
+l.meta_cdcontrols.sign.20<-lapply(l.meta_cdcontrols.sign, function(x) subset(x, bins %in% tax.sign))
+#dir.create("~/Documents/IBD/March_2023/R_analysis/RDS/", recursive = T)
+
+saveRDS(l.meta_cdcontrols.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.sign.20.rds"))
+
+tax[tax.sign,]
+saveRDS(tax[tax.sign,], paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.sign.20.taxa.rds"))
+
+```
+
+#Save workspace
+```{r, message =F, warning =F}
+dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/", recursive = T))
+save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/DA_UC_CD_Nov2023.RData"))
+```
