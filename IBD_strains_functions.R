@@ -212,12 +212,12 @@ get_species_persistent_enriched_in <- function(cor_df, ts2, enriched_in, min_ind
 # Generates figure 4C with definitions of strain changes
 plot_strain_changes_definitions <- function() {
   timepoints_plot <- data.frame("Timepoint" = c(1:5),
-                                "Individual 1" = c("strain 1","strain 1","no typed strain","no typed strain","no typed strain"),
-                                "Individual 2" = c("strain 1","strain 2","no typed strain","strain 1","strain 1"),
-                                "Individual 3" = c("strain 1","strain 2","strain 2","no typed strain","strain 3"),
+                                "Individual 1" = c("strain 1","strain 1",NA,NA,NA),
+                                "Individual 2" = c("strain 1","strain 2",NA,"strain 1","strain 1"),
+                                "Individual 3" = c("strain 1","strain 2","strain 2",NA,"strain 3"),
                                 "Individual 4" = c("strain 1","strain 2","strain 3","strain 2","strain 4"),
-                                "Individual 5" = c("no typed strain","strain 1","strain 2","strain 3","strain 1"),
-                                "Individual 6" = c("strain 1", "no typed strain", "strain 2", "no typed strain", "no typed strain")) %>% 
+                                "Individual 5" = c(NA,"strain 1","strain 2","strain 3","strain 1"),
+                                "Individual 6" = c("strain 1", NA, "strain 2", NA, NA)) %>% 
     pivot_longer(2:7, names_to = "Type",
                  values_to = "Strain") %>% 
     mutate(Individual = gsub("Individual.", "", Type)) %>% 
@@ -225,7 +225,7 @@ plot_strain_changes_definitions <- function() {
     ggplot(aes(x = Timepoint, y = Individual, shape = Strain)) +
     geom_point(size = 4) +
     theme_bw(base_size = 12) +
-    scale_shape_manual(values = c(1, 15, 16, 17, 18)) +
+    scale_shape_manual(values = c(15, 16, 17, 18), na.translate = FALSE) +
     theme(legend.position = "bottom") +
     scale_x_continuous(position = "top") + 
     guides(shape = guide_legend(nrow = 2)) +
@@ -373,7 +373,7 @@ plot_strain_changes_boxplots_all <- function(types_df_new_5t_hmp_libd, strain_ch
     facet_wrap(~Type, nrow = 1) +
     geom_bracket(inherit.aes = FALSE, y.position = 1.02, xmin = "control", xmax = "IBD",
                  label = "", tip.length = c(0.01, 0.01)) +
-    geom_text(inherit.aes = FALSE, data = lab_df, aes(x = -Inf, y = -Inf, label = label), hjust = -1.9, vjust = -33, size = 3) +
+    geom_text(inherit.aes = FALSE, data = lab_df, aes(x = -Inf, y = -Inf, label = label), hjust = -1.9, vjust = -30.75, size = 3) +
     theme_bw(base_size = 12) +
     scale_color_manual("", values = c("control" = "#1F78B4", "IBD" = "#E8A400")) +
     scale_fill_manual("", values = c("control" = "#1F78B4", "IBD" = "#E8A400")) +
