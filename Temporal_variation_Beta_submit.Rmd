@@ -505,6 +505,8 @@ meta_hr_cond_num<-meta%>%
   filter(!is.na(HumanRds_group))%>%
   distinct(IndividualID, .keep_all = TRUE)
 
+saveRDS(meta_hr_cond_num, paste0(PATHanalNov2023,"humanReads/chrt_cond_specific_HRpercentiles.rds"))
+
 #check number of Individuals with samples classified as high or low HR for both
 meta_hr_num$IndividualID%>%length()
 meta_hr_num$IndividualID%>%unique()%>%length()

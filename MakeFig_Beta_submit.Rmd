@@ -1,0 +1,1461 @@
+---
+title: "Make Figure for Beta-diversity in IBD"
+author: "Rebecca Ansorge"
+date: "21/12/2023"
+output: html_document
+---
+
+### Load libraries
+
+```{r}
+library(tidyverse)
+library(ggExtra)
+library(patchwork)
+library(cowplot)
+library(formattable)
+library(gridExtra)
+library(rstatix)
+library(ggpubr)
+library(biomeStats)
+library(RColorBrewer)
+```
+### Import data
+
+```{r}
+#PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#PATHanalNov2023<-"~/Library/CloudStorage/OneDrive-Personal/analysisNov2023/"
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+```
+
+```{r}
+sc.m<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pcoa.data.rds"))
+sc.m.dbRDA<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.dbrda.data.rds"))
+df_all_cross<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.df_all_cross.rds"))
+l_spec.long.distances.df.20<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.l_spec.long.distances.df.20.rds"))
+l_spec.long.distances.df.20ibd2<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.l_spec.long.distances.df.20ibd2.rds"))
+df.beta.pair<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pair.tempInd.rds"))
+ad.bc.cohort<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmva.bc.cohort.rds"))
+ad.bc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmva.bc.ibd.rds"))
+ad.bc.ibd2<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmvaPair.bc.ibd2.rds"))
+perInd_dist_vs_deltaHR_meta_slope.df<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/perInd_dist_vs_deltaHR.rds"))
+dist_hr_indNest_log2_lm_perCohort<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/dist_hr_indNest_log2_lm_perCohort.rds"))
+chrts_overview.obj<-readRDS(paste0(PATHanalNov2023,"PrepData/cohort_summary.rds"))
+
+```
+
+```{r}
+df_all_cross<-df_all_cross%>%
+  mutate(IBD=as.character(IBD))%>%
+  mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>% 
+  mutate(IBD2=factor(IBD2, levels=c("control","UC","CD")))
+
+sc.m<-sc.m%>%
+  mutate(IBD=as.character(IBD))%>%
+  mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+  mutate(IBD=as.factor(IBD))%>%
+  mutate(IBD2=as.factor(IBD2))
+  
+
+sc.m.dbRDA<-sc.m.dbRDA%>%
+  mutate(IBD=as.character(IBD))%>%
+  mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+  mutate(IBD=as.factor(IBD))%>%
+  mutate(IBD2=as.factor(IBD2))
+
+
+l_spec.long.distances.df.20<-lapply(l_spec.long.distances.df.20, function(x){
+  x2<-x%>%
+    mutate(IBD=as.character(IBD))%>%
+    mutate(IBD2=as.character(IBD2))%>%
+    mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+    mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+    mutate(IBD=as.factor(IBD))%>%
+    mutate(IBD2=as.factor(IBD2))%>% 
+  mutate(IBD2=factor(IBD2, levels=c("control","UC","CD")))
+  x2
+})
+
+l_spec.long.distances.df.20ibd2<-lapply(l_spec.long.distances.df.20ibd2, function(x){
+  x2<-x%>%
+    mutate(IBD=as.character(IBD))%>%
+    mutate(IBD2=as.character(IBD2))%>%
+    mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+    mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+    mutate(IBD=as.factor(IBD))%>%
+    mutate(IBD2=as.factor(IBD2))%>% 
+  mutate(IBD2=factor(IBD2, levels=c("control","UC","CD")))
+  x2
+})
+
+df.beta.pair<-df.beta.pair%>%
+  mutate(IBD=as.character(IBD))%>%
+  mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>% 
+  mutate(IBD2=factor(IBD2, levels=c("control","UC","CD")))
+
+perInd_dist_vs_deltaHR_meta_slope.df<-perInd_dist_vs_deltaHR_meta_slope.df%>%
+  mutate(IBD=as.character(IBD))%>%
+  mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>% 
+  mutate(IBD2=factor(IBD2, levels=c("control","UC","CD")))
+
+```
+
+```{r}
+# define color palette
+
+#col_IBD2<-c("#E8A400","#E31A1C","#FB9A99","#1F78B4","#1F78B4")
+col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4")
+names(col_IBD2)<-c("IBD","CD","UC","healthy","control")
+
+#display.brewer.pal(n=12, name="Paired")
+#brewer.pal(n=12, name="Paired")
+```
+
+
+#### permanovas
+
+```{r}
+# make df with permanova results
+
+ibd.pmva<-as.data.frame(ad.bc)["meta$IBD",]%>%
+  mutate(comparison="IBD vs control")
+cdhc.pmva<-as.data.frame(ad.bc.ibd2$CD_vs_healthy)["IBD2",]%>%
+  mutate(comparison="CD vs control")
+uchc.pmva<-as.data.frame(ad.bc.ibd2$UC_vs_healthy)["IBD2",]%>%
+  mutate(comparison="UC vs control")
+cduc.pmva<-as.data.frame(ad.bc.ibd2$CD_vs_UC)["IBD2",]%>%
+  mutate(comparison="CD vs UC")
+cohort.pmva<-as.data.frame(ad.bc.cohort)["meta$Cohort_precise",]%>%
+  mutate(comparison="cohort")
+
+df.pmva<-rbind(ibd.pmva,cdhc.pmva,uchc.pmva,cduc.pmva,cohort.pmva)
+df.pmva2<-data.frame(comparison=df.pmva$comparison,`p.value`=df.pmva$`Pr(>F)`,R2=df.pmva$R2)%>%
+  mutate(R2=round(R2,3))
+
+
+df.pmva2.obj<-formattable(df.pmva2,
+            list(`#` = formatter("span", style = ~ style(font.weight = "bold"))))
+df.pmva2.obj
+
+library(grid) 
+mytheme <- gridExtra::ttheme_minimal(
+    core = list(fg_params=list(cex = 0.7)),
+    colhead = list(fg_params=list(cex = 0.7)),
+    rowhead = list(fg_params=list(cex = 0.7)),
+    base_colour = "black")
+
+df.pmva2.obj.tab<-tableGrob(df.pmva2.obj,rows=c("","","","",""), theme = mytheme)
+
+plot(df.pmva2.obj.tab)
+
+df.pmva2.obj.tab2<-ggtexttable(df.pmva2.obj, rows = NULL, theme = ttheme("light", base_size=8,padding = unit(c(2, 2), "mm")))
+#df.pmva2.obj.tab2
+```
+
+### Make first time-point ordination
+
+#### PCoA (unconditioned)
+
+IBD 
+
+```{r}
+o.pcoa<-ggplot(sc.m, aes(Axis.1,   Axis.2, colour = IBD)) +
+    geom_point(size = 3, alpha = 0.7, aes(shape=IBD2)) +
+    theme_minimal() +
+    #scale_colour_manual(values = c("#40B0A6", "cornflowerblue", "#9370DB")) +
+    scale_colour_manual(values=col_IBD2, breaks = names(col_IBD2))+
+    xlab("PCo1 [14.5%]") +
+    ylab("PCo2 [6.2%]") +
+  theme(
+        #plot.caption  = element_text(size = 10),
+        #plot.title = element_text(size = 12, face = "plain"),
+        #plot.subtitle = element_text(size =14),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        legend.position=c(.08,.84),
+        legend.box.background = element_rect(colour = "black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1)) +
+        guides(color = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"),
+               shape = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"))+
+        annotation_custom(ggplotGrob(df.pmva2.obj.tab2), xmin=-0.5, xmax=1, ymin=0, ymax=0.89)+
+    ggtitle("PCoA of Bray-Curtis dissimilarities (first time-point)")
+    #labs(subtitle = "PCoA of Bray-Curtis dissimilarities (first time-point)")
+    #theme(title = element_text(size = 6,face = "italic"))
+
+
+
+og.cpoa<-ggMarginal(o.pcoa, groupFill = TRUE, size =8)
+og.cpoa
+
+#ggsave("~/OneDrive/work/HildebrandGroup/IBD/analysisR2023/Beta/PCoA.1tp.pdf",og.cpoa,height=5,width=6.5)
+```
+
+unconditioned PCoA colored by cohort
+
+```{r}
+
+o.pcoa<-ggplot(sc.m, aes(Axis.1,   Axis.2, colour = Cohort_precise)) +
+    geom_point(size = 3, alpha = 0.7, aes(shape=IBD2)) +
+    theme_minimal() +
+    #scale_colour_manual(values = c("#40B0A6", "cornflowerblue", "#9370DB")) +
+    #scale_colour_manual(values=col_IBD2, breaks = names(col_IBD2))+
+    xlab("PCo1 [14.5%]") +
+    ylab("PCo2 [6.2%]") +
+  theme(
+        #plot.caption  = element_text(size = 10),
+        #plot.title = element_text(size = 12, face = "plain"),
+        #plot.subtitle = element_text(size =14),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        legend.position=c(.08,.84),
+        legend.box.background = element_rect(colour = "black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1)) +
+        guides(color = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"),
+               shape = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"))+
+        annotation_custom(ggplotGrob(df.pmva2.obj.tab2), xmin=-0.5, xmax=1, ymin=0, ymax=0.89)+
+    ggtitle("PCoA of Bray-Curtis dissimilarities (first time-point)")
+    #labs(subtitle = "PCoA of Bray-Curtis dissimilarities (first time-point)")
+    #theme(title = element_text(size = 6,face = "italic"))
+
+
+
+og.cpoa<-ggMarginal(o.pcoa, groupFill = TRUE, size =8)
+og.cpoa
+
+#ggsave("~/OneDrive/work/HildebrandGroup/IBD/analysisR2023/Beta/PCoA.1tp.pdf",og.cpoa,height=5,width=6.5)
+```
+
+IBD2
+
+```{r}
+sc.m<-sc.m%>%mutate(IBD=as.character(IBD))%>%mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))
+
+o.pcoaIBD2<-ggplot(sc.m, aes(Axis.1,   Axis.2, colour = IBD2)) +
+    geom_point(size = 3, alpha = 0.7, aes(shape=IBD)) +
+    theme_minimal() +
+    scale_colour_manual(values = col_IBD2) +
+    xlab("PCo1 [14.5%]") +
+    ylab("PCo2 [6.2%]") +
+  theme(
+        #plot.caption  = element_text(size = 10),
+        #plot.title = element_text(size = 16, face = "bold"),
+        #plot.subtitle = element_text(size =14),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        legend.position=c(.08,.84),
+        legend.box.background = element_rect(colour = "black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1)) +
+        guides(color = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"),
+               shape = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"))+ 
+        #annotation_custom(ggplotGrob(df.pmva2.obj.tab2), xmin=-0.5, xmax=1, ymin=0, ymax=0.89)+
+        ggtitle("PCoA of Bray-Curtis dissimilarities (first time-point)")
+    #labs(title = "PCoA based on Bray-Curtis dissimilarities")
+
+og.cpoaIBD2<-ggMarginal(o.pcoaIBD2, groupFill = TRUE, size =8)
+og.cpoaIBD2
+
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/PCoA.1tp.pdf"),og.cpoaIBD2,height=7,width=8.5)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/PCoA.1tp.png"),og.cpoaIBD2,height=7,width=8.5)
+```
+
+
+#### dbRDA conditioned by cohort
+
+IBD
+```{r}
+o.dbrda<-ggplot(sc.m.dbRDA, aes(MDS2, MDS1, colour = IBD)) +
+    geom_point(size = 3, alpha = 0.7, aes(shape=IBD2)) +
+    theme_minimal() +
+    #scale_colour_manual(values = c("#40B0A6", "cornflowerblue", "#9370DB")) +
+    scale_colour_manual(values=col_IBD2, breaks = names(col_IBD2))+
+    #xlab("PCo1 [14.5%]") +
+    #ylab("PCo2 [6.2%]") +
+  theme(
+        #plot.caption  = element_text(size = 10),
+        #plot.title = element_text(size = 12, face = "plain"),
+        #plot.subtitle = element_text(size =14),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        legend.position=c(.92,.86),
+        legend.box.background = element_rect(colour = "black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1)) +
+        guides(color = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"),
+               shape = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm"))+
+        annotation_custom(ggplotGrob(df.pmva2.obj.tab2), xmin=-1.5, xmax=-1, ymin=-2.5, ymax=-2.2)+
+    ggtitle("dbRDA of Bray-Curtis diss. (first time-point; conditioned by cohort)")
+    #labs(subtitle = "PCoA of Bray-Curtis dissimilarities (first time-point)")
+    #theme(title = element_text(size = 6,face = "italic"))
+
+
+og.dbrda<-ggMarginal(o.dbrda, groupFill = TRUE, size =8)
+og.dbrda
+
+#ggsave("~/OneDrive/work/HildebrandGroup/IBD/analysisR2023/Beta/PCoA.1tp.pdf",og.cpoa,height=5,width=6.5)
+```
+
+IBD2
+
+```{r}
+
+o.dbrdaIBD2<-ggplot(sc.m.dbRDA, aes(MDS2, MDS1, colour = IBD2)) +
+    geom_point(size = 1, alpha = 0.7) +
+    theme_minimal() +
+    scale_colour_manual(values = col_IBD2, breaks = names(col_IBD2)) +
+  theme(title=element_text(size=9),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        legend.position=c(.1,.86),
+        legend.box.background = element_rect(colour = "black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1)) +
+        guides(color = guide_legend(keywidth=0.1,keyheight=0.1,default.unit="cm", "IBD subtype"))+ 
+        annotation_custom(ggplotGrob(df.pmva2.obj.tab2), xmin=1.6, xmax=2.6, ymin=2.5, ymax=2.7)+
+        ggtitle("dbRDA of BC dissimilarities (conditioned by cohort)")
+    #labs(title = "PCoA based on Bray-Curtis dissimilarities")
+
+og.dbrdaIBD2<-ggMarginal(o.dbrdaIBD2, groupFill = TRUE, size =8)
+og.dbrdaIBD2
+
+#ggsave("~/OneDrive/work/HildebrandGroup/IBD/analysisR2023/Beta/PCoA.1tp.pdf",og.cpoaIBD2,height=7,width=8.5)
+```
+
+### Distance from centroid 
+
+#### Tests
+
+
+#### Crosssectional
+
+```{r}
+# each cohort separately
+stat.test <- df_all_cross %>%
+  group_by(cohort) %>%
+  wilcox_test(distances_ccentr~IBD) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD")
+stat.test
+```
+
+```{r}
+# blocked by cohort
+df_all_cross$cohort<-as.factor(df_all_cross$cohort)
+df_all_cross$IBD<-as.factor(df_all_cross$IBD)
+df_all_cross$IBD2<-as.factor(df_all_cross$IBD2)
+
+stat.test.ibd.blocked_IBDHC<-coin::wilcox_test(distances_ccentr~IBD | cohort, df_all_cross)
+
+stat.test.ibd.blocked<-data.frame(
+  cohort="all",
+  .y.="distances_ccentr",
+  group1=c("IBD"),
+  group2=c("control"),
+  n1=nrow(df_all_cross%>%filter(IBD=="IBD")),
+  n2=nrow(df_all_cross%>%filter(IBD=="control")),
+  statistic=coin::statistic(stat.test.ibd.blocked_IBDHC),
+  p=coin::pvalue(stat.test.ibd.blocked_IBDHC)
+)
+
+stat.test.ibd.blocked<-stat.test.ibd.blocked%>%add_significance()
+stat.test.ibd.blocked<-stat.test.ibd.blocked%>%mutate(groups=paste0('c("',group1,'","',group2,'")'))
+stat.test.ibd.blocked$y.position=c(0.84)
+stat.test.ibd.blocked$xmin=c(1)
+stat.test.ibd.blocked$xmax=c(2)
+stat.test.ibd.blocked
+```
+
+
+
+```{r}
+df_all_cross.plot<-ggplot(df_all_cross) +
+  geom_violin(aes(x=IBD, y=distances_ccentr, fill = IBD))+
+  scale_fill_manual(values=col_IBD2, breaks = names(col_IBD2))+
+  geom_boxplot(aes(x=IBD, y=distances_ccentr),fill="white",width=0.2,alpha=0.5)+
+  theme_bw()+
+  facet_wrap(~ cohort, scales = "free", ncol = 5) +
+  theme(axis.title.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1, 0))+
+  stat_pvalue_manual(stat.test,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))+
+  ylab("Distance from centroid")
+
+df_all_cross.plot
+```
+
+IBD average and wilcoxon test blocked by cohort
+
+```{r}
+df_all_cross.plot_mean<-ggplot(df_all_cross) +
+  geom_violin(aes(x=IBD, y=distances_ccentr, fill = IBD))+
+  scale_fill_manual(values=col_IBD2, breaks = names(col_IBD2))+
+  geom_boxplot(aes(x=IBD, y=distances_ccentr),fill="white",width=0.2,alpha=0.5)+
+  theme_bw()+
+  #facet_wrap(~ cohort, scales = "free", ncol = 5) +
+  theme(axis.title.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1, 0))+
+  stat_pvalue_manual(stat.test.ibd.blocked,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))+
+  ylab("Distance from centroid") 
+
+df_all_cross.plot_mean
+```
+
+IBD2 
+
+```{r}
+
+stat.test.ibd2 <- df_all_cross %>%
+  group_by(cohort) %>%
+  #t_test(distances_ccentr~IBD2) %>%
+  wilcox_test(distances_ccentr~IBD2) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD2")%>%
+  mutate(xmax=ifelse(cohort%in%c("He","Tian"),2,xmax))%>%
+  mutate(p.adj.signif=ifelse(p.adj>0.05 & p.adj < 0.1,".",p.adj.signif))
+
+df_all_cross.plotIBD2<-ggplot(df_all_cross) +
+  geom_violin(aes(IBD2, distances_ccentr, fill = IBD)) +
+  #scale_fill_brewer(type = "div", palette = "Set3") +
+  #scale_fill_manual(values=c("#40B0A6", "cornflowerblue", "#9370DB"))+
+  scale_fill_manual(values=col_IBD2, breaks = names(col_IBD2))+
+  geom_boxplot(aes(IBD2, distances_ccentr),width=0.2,fill="white",alpha=0.5) +
+  theme_bw()+
+  facet_wrap(~ cohort, scales = "free", ncol = 5) +
+  ylab("Distance from centroid") +
+  theme(axis.title.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1, 0))+
+  stat_pvalue_manual(stat.test.ibd2,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))
+  #ggtitle("Distance of samples from centroids")
+df_all_cross.plotIBD2
+```
+
+```{r}
+# blocked by cohort
+df_all_cross$cohort<-as.factor(df_all_cross$cohort)
+
+df_all_cross_CDHC<-df_all_cross%>%
+  filter(IBD2%in%c("CD","control"))
+df_all_cross_UCHC<-df_all_cross%>%
+  filter(IBD2%in%c("UC","control"))
+df_all_cross_CDUC<-df_all_cross%>%
+  filter(IBD2%in%c("CD","UC"))
+
+stat.test.ibd2.blocked_CDHC<-coin::wilcox_test(distances_ccentr~IBD2 | cohort, df_all_cross_CDHC)
+stat.test.ibd2.blocked_UCHC<-coin::wilcox_test(distances_ccentr~IBD2 | cohort, df_all_cross_UCHC)
+stat.test.ibd2.blocked_CDUC<-coin::wilcox_test(distances_ccentr~IBD2 | cohort, df_all_cross_CDUC)
+
+
+stat.test.ibd2.blocked<-data.frame(
+  cohort="all",
+  .y.="distances_ccentr",
+  group1=c("CD","UC","CD"),
+  group2=c("control","control","UC"),
+  n1=c(nrow(df_all_cross_CDHC%>%filter(IBD2=="CD")),nrow(df_all_cross_UCHC%>%filter(IBD2=="UC")),nrow(df_all_cross_CDUC%>%filter(IBD2=="CD"))),
+  n2=c(nrow(df_all_cross_CDHC%>%filter(IBD2=="control")),nrow(df_all_cross_UCHC%>%filter(IBD2=="control")),nrow(df_all_cross_CDUC%>%filter(IBD2=="UC"))),
+  statistic=c(coin::statistic(stat.test.ibd2.blocked_CDHC),coin::statistic(stat.test.ibd2.blocked_UCHC),coin::statistic(stat.test.ibd2.blocked_CDUC)),
+  effectSize=c(coin::statistic(stat.test.ibd2.blocked_CDHC)/sqrt(nrow(df_all_cross_CDHC)),coin::statistic(stat.test.ibd2.blocked_UCHC)/sqrt(nrow(df_all_cross_UCHC)),coin::statistic(stat.test.ibd2.blocked_CDUC)/sqrt(nrow(df_all_cross_CDUC))),
+  p=c(coin::pvalue(stat.test.ibd2.blocked_CDHC),coin::pvalue(stat.test.ibd2.blocked_UCHC),coin::pvalue(stat.test.ibd2.blocked_CDUC))
+)
+
+stat.test.ibd2.blocked$p.adj<-p.adjust(stat.test.ibd2.blocked$p, method="BH")
+stat.test.ibd2.blocked<-stat.test.ibd2.blocked%>%add_significance()
+stat.test.ibd2.blocked<-stat.test.ibd2.blocked%>%mutate(groups=paste0('c("',group1,'","',group2,'")'))
+stat.test.ibd2.blocked$y.position=c(0.84,0.80,0.88)
+stat.test.ibd2.blocked$xmin=c(3,2,3)
+stat.test.ibd2.blocked$xmax=c(1,1,2)
+stat.test.ibd2.blocked
+  
+```
+
+IBD2b
+
+```{r}
+df_all_cross.plotIBD2b<-ggplot(df_all_cross) +
+  geom_violin(aes(IBD2, distances_ccentr, fill = IBD2)) +
+  #scale_fill_brewer(type = "div", palette = "Set3") +
+  scale_fill_manual(values=col_IBD2, name="")+
+  #scale_fill_manual(values=c("#40B0A6","#E8A400"))+
+  geom_boxplot(aes(IBD2, distances_ccentr),width=0.2,fill="white",alpha=0.5) +
+  theme_bw()+
+  facet_wrap(~ cohort, scales = "free", ncol = 5) +
+  ylab("Distance from centroid") +
+  theme(axis.title.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1, 0))+
+  stat_pvalue_manual(stat.test.ibd2,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))
+
+  #ggtitle("Distance of samples from centroids")
+df_all_cross.plotIBD2b
+```
+
+IBD2b
+
+```{r}
+df_all_cross.plotIBD2b_thin<-ggplot(df_all_cross) +
+  geom_violin(aes(IBD2, distances_ccentr, fill = IBD2)) +
+  #scale_fill_brewer(type = "div", palette = "Set3") +
+  scale_fill_manual(values=col_IBD2)+
+  #scale_fill_manual(values=c("#40B0A6","#E8A400"))+
+  geom_boxplot(aes(IBD2, distances_ccentr),width=0.2,fill="white",alpha=0.5) +
+  theme_bw()+
+  facet_wrap(~ cohort, scales = "free_x", nrow = 1) +
+  ylab("Distance from centroid") +
+  theme(axis.title.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1, 0))+
+  stat_pvalue_manual(stat.test.ibd2,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))
+
+  #ggtitle("Distance of samples from centroids")
+df_all_cross.plotIBD2b_thin
+```
+
+IBD2b average and wilcoxon test blocked by cohort
+
+```{r}
+df_all_cross.plotIBD2b_mean<-ggplot(df_all_cross) +
+  geom_violin(aes(IBD2, distances_ccentr, fill = IBD2)) +
+  #scale_fill_brewer(type = "div", palette = "Set3") +
+  scale_fill_manual(values=col_IBD2)+
+  #scale_fill_manual(values=c("#40B0A6","#E8A400"))+
+  geom_boxplot(aes(IBD2, distances_ccentr),width=0.2,fill="white",alpha=0.5) +
+  theme_bw()+
+  #facet_wrap(~ cohort, scales = "free", ncol = 5) +
+  ylab("Distance from centroid\n") +
+  theme(axis.title.x = element_blank(),
+        legend.position = c(1, 0),
+        legend.justification = c(1, 0))+
+  stat_pvalue_manual(stat.test.ibd2.blocked,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))
+
+  #ggtitle("Distance of samples from centroids")
+df_all_cross.plotIBD2b_mean
+```
+
+#### Longitudinal
+
+IBD
+
+```{r}
+l_spec.long.distances.df_all.20<-do.call(rbind,l_spec.long.distances.df.20)
+
+l_spec.long.distances.df_all.mean20<-l_spec.long.distances.df_all.20%>%
+  group_by(cohort, IBD, iteration)%>%
+  summarize(mean_dist = mean(distances_ccentr, na.rm = TRUE))%>%
+  group_by(cohort, IBD)%>%
+  summarize(mean_mean_dist=mean(mean_dist),stdev_mean_dist=sd(mean_dist))
+l_spec.long.distances.df_all.mean20
+
+# geom_errorbar(data=l_spec.long.distances.df_all.mean20,aes(x=IBD,y=mean_dist,ymin=mean_dist-stdev_dist, ymax=mean_dist+stdev_dist), width=.1, color="grey50")+
+
+
+mean_dist_resample.plot<-ggplot(l_spec.long.distances.df_all.mean20, aes(IBD, mean_mean_dist, color = IBD)) +
+    geom_errorbar(aes(x=IBD,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    geom_point(size=3, shape=4)+
+    scale_color_manual(values=col_IBD2)+
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",nrow = 1) +
+    ylab(paste0("Mean distance","\n","from centroid")) +
+    theme(axis.title.x = element_blank())
+    #ggtitle("Mean distance of samples from centroids across resampling")
+#mean_dist_resample.plot
+
+```
+
+### wilcoxon test for each resampling timepoint
+
+```{r}
+wt.ibd.20<-lapply(c(1:20), function(n){
+  #n<-3
+  wt.test.ibd <- l_spec.long.distances.df.20[[n]] %>%
+  group_by(cohort) %>%
+  wilcox_test(distances_ccentr~IBD) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD")
+})
+
+wt.sum.ibd.20<-do.call(rbind, wt.ibd.20)%>%
+  group_by(cohort,group1,group2)%>%
+  count(p.adj.signif) %>%
+  group_by(cohort,group1,group2)%>%
+  summarise(sig = paste0(n[p.adj.signif!="ns"],"*"," / ",n[p.adj.signif=="ns"],"ns"))%>%
+  mutate(p.adj.signif=ifelse(sig=="* / 20ns","ns",sig))
+
+
+wt.ibd.20.stat<-wt.ibd.20[[1]]%>%
+  rename(p.adj.signif.sample1=p.adj.signif)%>%
+  left_join(wt.sum.ibd.20,by=c("cohort", "group1", "group2"))#%>%
+  #mutate(xmax=ifelse(cohort%in%c("USA","Fang_UCSD_IBD_Biobank","Lewis"),2,xmax))%>%
+  #mutate(xmin=ifelse(cohort%in%c("USA","Fang_UCSD_IBD_Biobank"),1,xmin))
+```
+
+
+
+
+### plot for each re-sampling time-point
+
+```{r}
+l_spec.long.distances.plots.20<-lapply(c(1:20), function(n){
+#n<-1
+  ggplot(l_spec.long.distances.df.20[[n]]) +
+    geom_violin(aes(x=IBD, y=distances_ccentr, fill = IBD),alpha=0.5) +
+    #scale_fill_brewer(type = "div", palette = "Set3") +
+    scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2))+
+    #scale_color_manual(values=c("#40B0A6", "cornflowerblue", "#9370DB")) +
+    geom_boxplot(aes(x=IBD, y=distances_ccentr),fill="white",width=0.2,alpha=0.5) +
+    #geom_errorbar(data=l_spec.long.distances.df_all.mean20,aes(x=IBD,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    #geom_jitter(aes(x=IBD2, y=distances_ccentr))+
+    geom_point(data=l_spec.long.distances.df_all.mean20,aes(x=IBD, y=mean_mean_dist), size=3, shape=18)+
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",ncol=6) +
+    stat_pvalue_manual(wt.ibd.20.stat,size = 3)+ 
+    scale_y_continuous(expand = expansion(mult = 0.1))+
+    theme(axis.title.x=element_blank(),
+          legend.position = "none")+
+    ylab(paste0("Distance from","\n","centroid and mean"))
+    #ggtitle("Mean distance of samples from centroids across resampling")
+})
+#l_spec.long.distances.plots.20[1]
+```
+
+
+
+IBD2
+
+```{r}
+l_spec.long.distances.df_all.20ibd2<-do.call(rbind,l_spec.long.distances.df.20ibd2)
+
+l_spec.long.distances.df_all.mean20ibd2<-l_spec.long.distances.df_all.20ibd2%>%
+  group_by(cohort, IBD2, iteration)%>%
+  summarize(mean_dist = mean(distances_ccentr, na.rm = TRUE))%>%
+  group_by(cohort, IBD2)%>%
+  summarize(mean_mean_dist=mean(mean_dist),stdev_mean_dist=sd(mean_dist))%>%
+  mutate(IBD=ifelse(IBD2=="control","control","IBD"))
+l_spec.long.distances.df_all.mean20ibd2
+
+# geom_errorbar(data=l_spec.long.distances.df_all.mean20,aes(x=IBD,y=mean_dist,ymin=mean_dist-stdev_dist, ymax=mean_dist+stdev_dist), width=.1, color="grey50")+
+
+
+mean_dist_resample.ibd2.plot<-ggplot(l_spec.long.distances.df_all.mean20ibd2, aes(IBD2, mean_mean_dist, color = IBD)) +
+    geom_errorbar(aes(x=IBD2,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    geom_point(size=3, shape=4)+
+    scale_color_manual(values=col_IBD2, breaks=names(col_IBD2))+
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",nrow = 1)+
+    ylab(paste0("Mean distance","\n","from centroid")) +
+    theme(axis.title.x = element_blank())
+    #ggtitle("Mean distance of samples from centroids across resampling")
+#mean_dist_resample.ibd2.plot
+
+```
+IBD2 - mean distribution
+
+```{r}
+l_spec.long.distances.df_all.mean20ibd2.distr<-l_spec.long.distances.df_all.20ibd2%>%
+  group_by(cohort, IBD2, iteration)%>%
+  summarize(mean_dist = mean(distances_ccentr, na.rm = TRUE))%>%
+  group_by(cohort, IBD2)%>%
+  #summarize(mean_mean_dist=mean(mean_dist),stdev_mean_dist=sd(mean_dist))%>%
+  mutate(IBD=ifelse(IBD2=="control","control","IBD"))
+l_spec.long.distances.df_all.mean20ibd2.distr
+
+mean_dist_resample.distr.ibd2.plot<-ggplot(l_spec.long.distances.df_all.mean20ibd2.distr) +
+    geom_violin(aes(IBD2, mean_dist, fill = IBD))+
+    geom_boxplot(aes(IBD2, mean_dist),width=0.2,fill="white",alpha=0.5)+
+    #geom_jitter(aes(IBD2, mean_dist),size=0.5)+
+    scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2))+
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",nrow = 1)+
+    ylab(paste0("Mean distance","\n","from centroid")) +
+    theme(axis.title.x = element_blank())
+    #ggtitle("Mean distance of samples from centroids across resampling")
+mean_dist_resample.distr.ibd2.plot
+
+```
+
+
+### wilcoxon test for each resampling timepoint
+```{r}
+wt.ibd2.20<-lapply(c(1:20), function(n){
+  #n<-3
+  wt.test.ibd <- l_spec.long.distances.df.20ibd2[[n]] %>%
+  group_by(cohort) %>%
+  wilcox_test(distances_ccentr~IBD2) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD2")
+})
+
+wt.sum.ibd2.20<-do.call(rbind, wt.ibd2.20)%>%
+  group_by(cohort,group1,group2)%>%
+  count(p.adj.signif) %>%
+  group_by(cohort,group1,group2)%>%
+  summarise(sig = paste0(n[p.adj.signif!="ns"],"*"," / ",n[p.adj.signif=="ns"],"ns"))%>%
+  mutate(p.adj.signif=ifelse(sig=="* / 20ns","ns",sig))
+
+
+wt.ibd2.20.stat<-wt.ibd2.20[[1]]%>%
+  rename(p.adj.signif.sample1=p.adj.signif)%>%
+  left_join(wt.sum.ibd2.20,by=c("cohort", "group1", "group2"))%>%
+  mutate(xmax=ifelse(cohort%in%c("USA","Fang_UCSD_IBD_Biobank","Lewis"),2,xmax))%>%
+  mutate(xmin=ifelse(cohort%in%c("USA","Fang_UCSD_IBD_Biobank"),1,xmin))
+
+
+```
+
+### blocked wilcoxon test for each resampling timepoint
+
+```{r}
+wt.ibd2.blocked.20<-lapply(c(1:20), function(n){
+  #n<-3
+  wt.test.ibd <- l_spec.long.distances.df.20ibd2[[n]]
+  
+  # blocked by cohort
+  wt.test.ibd$cohort<-as.factor(wt.test.ibd$cohort)
+
+  df_all_long_CDHC<-wt.test.ibd%>%filter(IBD2%in%c("CD","control"))
+  df_all_long_UCHC<-wt.test.ibd%>%filter(IBD2%in%c("UC","control"))
+  df_all_long_CDUC<-wt.test.ibd%>%filter(IBD2%in%c("CD","UC"))
+
+  wt.test.ibd2.blocked_CDHC<-coin::wilcox_test(distances_ccentr~IBD2 | cohort, df_all_long_CDHC)
+  wt.test.ibd2.blocked_UCHC<-coin::wilcox_test(distances_ccentr~IBD2 | cohort, df_all_long_UCHC)
+  wt.test.ibd2.blocked_CDUC<-coin::wilcox_test(distances_ccentr~IBD2 | cohort, df_all_long_CDUC)
+
+  wt.test.ibd2.blocked<-data.frame(
+    cohort="all",
+    .y.="distances_ccentr",
+    group1=c("CD","UC","CD"),
+    group2=c("control","control","UC"),
+    n1=c(nrow(df_all_long_CDHC%>%filter(IBD2=="CD")),nrow(df_all_long_UCHC%>%filter(IBD2=="UC")),nrow(df_all_long_CDUC%>%filter(IBD2=="CD"))),
+    n2=c(nrow(df_all_long_CDHC%>%filter(IBD2=="control")),nrow(df_all_long_UCHC%>%filter(IBD2=="control")),nrow(df_all_long_CDUC%>%filter(IBD2=="UC"))),
+    statistic=c(coin::statistic(wt.test.ibd2.blocked_CDHC),coin::statistic(wt.test.ibd2.blocked_UCHC),coin::statistic(wt.test.ibd2.blocked_CDUC)),
+    p=c(coin::pvalue(wt.test.ibd2.blocked_CDHC),coin::pvalue(wt.test.ibd2.blocked_UCHC),coin::pvalue(wt.test.ibd2.blocked_CDUC))
+  )
+  
+  wt.test.ibd2.blocked$p.adj<-p.adjust(wt.test.ibd2.blocked$p, method="BH")
+  wt.test.ibd2.blocked<-wt.test.ibd2.blocked%>%add_significance()
+  wt.test.ibd2.blocked<-wt.test.ibd2.blocked%>%mutate(groups=paste0('c("',group1,'","',group2,'")'))
+  wt.test.ibd2.blocked$y.position=c(0.88,0.84,0.92)
+  wt.test.ibd2.blocked$xmin=c(3,2,3)
+  wt.test.ibd2.blocked$xmax=c(1,1,2)
+  
+  return(wt.test.ibd2.blocked)
+})
+
+
+wt.sum.ibd2.blocked.20<-do.call(rbind, wt.ibd2.blocked.20)%>%
+  mutate(p.adj.signif2=ifelse(p.adj.signif!="ns","*",p.adj.signif))%>%
+  group_by(group1,group2)%>%
+  count(p.adj.signif2) %>%
+  summarise(sig = paste0(n[p.adj.signif2!="ns"],"*"," / ",n[p.adj.signif2=="ns"],"ns"))%>%
+  mutate(p.adj.signif=ifelse(sig=="* / 20ns","ns",sig))%>%
+  mutate(p.adj.signif=ifelse(p.adj.signif=="20* / ns","*",p.adj.signif))
+
+
+wt.ibd2.blocked.20.stat<-wt.ibd2.blocked.20[[1]]%>%
+  rename(p.adj.signif.sample1=p.adj.signif)%>%
+  left_join(wt.sum.ibd2.blocked.20,by=c("group1", "group2"))
+
+```
+
+
+```{r}
+l_spec.long.distances.ibd2.plots.20<-lapply(c(1:20), function(n){
+  #n<-1
+  ggplot(l_spec.long.distances.df.20ibd2[[n]]) +
+    geom_violin(aes(x=IBD2, y=distances_ccentr, fill = IBD),alpha=0.5) +
+    #scale_fill_brewer(type = "div", palette = "Set3") +
+    scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2))+
+    #scale_color_manual(values=c("#40B0A6", "cornflowerblue", "#9370DB")) +
+    geom_boxplot(aes(x=IBD2, y=distances_ccentr),fill="white",width=0.2,alpha=0.5) +
+    #geom_errorbar(data=l_spec.long.distances.df_all.mean20,aes(x=IBD,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    #geom_jitter(aes(x=IBD2, y=distances_ccentr))+
+    geom_point(data=l_spec.long.distances.df_all.mean20ibd2,aes(x=IBD2, y=mean_mean_dist), size=3, shape=18)+
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",ncol=6) +
+    stat_pvalue_manual(wt.ibd2.20.stat,size = 3)+ 
+    scale_y_continuous(expand = expansion(mult = 0.1))+
+    theme(axis.title.x=element_blank(),
+          legend.position = "none")+
+    ylab(paste0(paste0("Distance from","\n","centroid and mean")))
+    #ggtitle("Mean distance of samples from centroids across resampling")
+})
+```
+
+IBD2b
+
+```{r}
+mean_dist_resample.ibd2b.plot<-ggplot(l_spec.long.distances.df_all.mean20ibd2, aes(IBD2, mean_mean_dist, color = IBD2)) +
+    geom_errorbar(aes(x=IBD2,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    geom_point(size=3, shape=4)+
+    #scale_color_manual(values=c("#40B0A6","#E8A400"))+
+    scale_color_manual(values=col_IBD2, breaks=names(col_IBD2)) +
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",nrow = 1)+
+    ylab(paste0("Mean distance","\n","from centroid")) +
+    theme(axis.title.x = element_blank())
+    #ggtitle("Mean distance of samples from centroids across resampling")
+#mean_dist_resample.ibd2b.plot
+
+```
+
+
+```{r}
+l_spec.long.distances.ibd2b.plots.20<-lapply(c(1:20), function(n){
+  #n<-1
+  ggplot(l_spec.long.distances.df.20ibd2[[n]]) +
+    geom_violin(aes(x=IBD2, y=distances_ccentr, fill = IBD2),alpha=0.5) +
+    #scale_fill_brewer(type = "div", palette = "Set3") +
+    #scale_fill_manual(values=c("#40B0A6","#E8A400"))+
+    scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2)) +
+    geom_boxplot(aes(x=IBD2, y=distances_ccentr),fill="white",width=0.2,alpha=0.5) +
+    #geom_errorbar(data=l_spec.long.distances.df_all.mean20,aes(x=IBD,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    #geom_jitter(aes(x=IBD2, y=distances_ccentr))+
+    geom_point(data=l_spec.long.distances.df_all.mean20ibd2,aes(x=IBD2, y=mean_mean_dist), size=3, shape=18)+
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",ncol=6) +
+    stat_pvalue_manual(wt.ibd2.20.stat,size = 3)+ 
+    scale_y_continuous(expand = expansion(mult = 0.1))+
+    theme(axis.title.x=element_blank(),
+          legend.position = "none")+
+    ylab(paste0(paste0("Distance from","\n","centroid and mean")))
+    #ggtitle("Mean distance of samples from centroids across resampling")
+})
+```
+
+blocked mean IBD2
+
+```{r}
+l_spec.long.distances.ibd2b.blocked.plots.20<-lapply(c(1:20), function(n){
+  #n<-1
+  ggplot(l_spec.long.distances.df.20ibd2[[n]]) +
+    geom_violin(aes(x=IBD2, y=distances_ccentr, fill = IBD2),alpha=0.5) +
+    #scale_fill_brewer(type = "div", palette = "Set3") +
+    #scale_fill_manual(values=c("#40B0A6","#E8A400"))+
+    scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2)) +
+    geom_boxplot(aes(x=IBD2, y=distances_ccentr),fill="white",width=0.2,alpha=0.5) +
+    #geom_errorbar(data=l_spec.long.distances.df_all.mean20,aes(x=IBD,y=mean_mean_dist,ymin=mean_mean_dist-stdev_mean_dist, ymax=mean_mean_dist+stdev_mean_dist), width=.1, color="grey50")+
+    #geom_jitter(aes(x=IBD2, y=distances_ccentr))+
+    geom_point(data=l_spec.long.distances.df_all.mean20ibd2,aes(x=IBD2, y=mean_mean_dist, shape=cohort), size=1)+
+    theme_bw()+
+    #facet_wrap(~ cohort, scales = "free",ncol=6) +
+    stat_pvalue_manual(wt.ibd2.blocked.20.stat,size = 3)+ 
+    scale_y_continuous(expand = expansion(mult = 0.1))+
+    theme(axis.title.x=element_blank(),
+          legend.position = "none")+
+    ylab(paste0(paste0("Distance from","\n","centroid and mean")))
+    #ggtitle("Mean distance of samples from centroids across resampling")
+})
+#l_spec.long.distances.ibd2b.blocked.plots.20[[1]]
+```
+
+IBD2 distribution of means
+
+```{r}
+mean_dist_resample.distr.ibd2b.plot<-ggplot(l_spec.long.distances.df_all.mean20ibd2.distr) +
+    geom_violin(aes(IBD2, mean_dist, fill = IBD2))+
+    geom_boxplot(aes(IBD2, mean_dist),width=0.2,fill="white",alpha=0.5)+
+    #geom_jitter(aes(IBD2, mean_dist),size=0.5)+
+    #scale_fill_manual(values=c("#40B0A6","#E8A400"))+
+    scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2)) +
+    theme_bw()+
+    facet_wrap(~ cohort, scales = "free",nrow = 1)+
+    ylab(paste0("Mean distance","\n","from centroid")) +
+    theme(axis.title.x = element_blank())
+    #ggtitle("Mean distance of samples from centroids across resampling")
+mean_dist_resample.distr.ibd2b.plot
+```
+
+
+### Average beta-diversity among 4 consecutive samples per Individual
+
+IBD
+
+```{r}
+
+stat.test.Ind <- df.beta.pair %>%
+  wilcox_test(average~IBD) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance() %>% 
+  add_xy_position(x = "IBD")
+
+beta.pair.p1<-ggplot(df.beta.pair) +
+  geom_violin(aes(IBD, average, fill = IBD)) +
+  geom_boxplot(aes(IBD, average, fill = IBD),fill="white",width=0.2,alpha=0.5) +
+  #geom_jitter()+
+  #scale_fill_brewer(type = "div", palette = "Set2") +
+  #scale_fill_manual(values=c("#40B0A6", "cornflowerblue", "#9370DB"))+
+  scale_fill_manual(values=col_IBD2)+
+  theme_bw() +
+  ylab(paste0("Mean distance","\n","per individual")) +
+  theme(axis.title.x = element_blank())+
+  stat_pvalue_manual(stat.test.Ind,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))+
+  ggtitle("Not accounted for cohort effect")
+  #labs(title = "Average distances between 4 consecutive samples across conditions")
+beta.pair.p1
+```
+
+IBD2
+
+not accounted for cohort
+
+```{r}
+
+stat.test.Ind.ibd2 <- df.beta.pair %>%
+  #filter(cohort%in%c("HMP","HMP2","LIBD"))%>%
+  wilcox_test(average~IBD2) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD2")
+stat.test.Ind.ibd2
+```
+
+accounting for cohort
+
+
+```{r}
+#df.beta.pair %>%
+# group_by(cohort)%>%
+#  count(IBD2)%>%View()
+```
+
+Each cohort separately seems to have too few samples to reas significance
+
+```{r}
+df.beta.pair %>%
+  filter(cohort!="Lewis")%>%
+  group_by(cohort) %>%
+  wilcox_test(average~IBD2) %>%
+  adjust_pvalue(method = "BH")%>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD2")
+```
+
+check whether cohort effect is significant
+
+* for controls and UC there is no cohort effect
+* for CD there is a cohort effect
+
+```{r}
+df.beta.pair%>%
+  filter(IBD2%in%c("control"))%>%
+  wilcox_test(average~cohort)
+
+df.beta.pair%>%
+  filter(IBD2%in%c("CD"))%>%
+  wilcox_test(average~cohort)
+
+df.beta.pair%>%
+  filter(IBD2%in%c("UC"))%>%
+  wilcox_test(average~cohort)
+```
+
+Testing the intra-individual effect between UC and controls across all cohorts
+
+```{r}
+df.beta.pair %>%
+  filter(IBD2!="CD")%>%
+  wilcox_test(average~IBD2) %>%
+  add_significance()
+```
+
+Testing the intra-individual effect between CD and controls across all cohorts that were not significantly different from each other
+
+```{r}
+df.beta.pair %>%
+  filter(cohort%in%c("HMP","HMP2","LIBD"))%>%
+  #filter(IBD2!="UC")%>%
+  wilcox_test(average~IBD2) %>%
+  adjust_pvalue(method = "BH") %>%
+  add_significance()%>% 
+  add_xy_position(x = "IBD2")
+```
+
+Testinf intra-individual effect blocked by cohort
+
+```{r}
+
+# blocked by cohort
+df.beta.pair$cohort<-as.factor(df.beta.pair$cohort)
+
+df.beta.pair_CDHC<-df.beta.pair%>%
+  filter(cohort!="Lewis")%>%
+  filter(IBD2%in%c("CD","control"))
+df.beta.pair_UCHC<-df.beta.pair%>%
+  filter(cohort!="Lewis")%>%
+  filter(IBD2%in%c("UC","control"))
+df.beta.pair_CDUC<-df.beta.pair%>%
+  filter(cohort!="Lewis")%>%
+  filter(IBD2%in%c("CD","UC"))
+
+stat.test.Ind.ibd2.blocked_CDHC<-coin::wilcox_test(average~IBD2 | cohort, df.beta.pair_CDHC)
+stat.test.Ind.ibd2.blocked_UCHC<-coin::wilcox_test(average~IBD2 | cohort, df.beta.pair_UCHC)
+stat.test.Ind.ibd2.blocked_CDUC<-coin::wilcox_test(average~IBD2 | cohort, df.beta.pair_CDUC)
+
+stat.test.Ind.ibd2.blocked<-data.frame(
+  cohort="all",
+  .y.="distances_ccentr",
+  group1=c("CD","UC","CD"),
+  group2=c("control","control","UC"),
+  n1=c(nrow(df.beta.pair_CDHC%>%filter(IBD2=="CD")),nrow(df.beta.pair_UCHC%>%filter(IBD2=="UC")),nrow(df.beta.pair_CDUC%>%filter(IBD2=="CD"))),
+  n2=c(nrow(df.beta.pair_CDHC%>%filter(IBD2=="control")),nrow(df.beta.pair_UCHC%>%filter(IBD2=="control")),nrow(df.beta.pair_CDUC%>%filter(IBD2=="UC"))),
+  statistic=c(coin::statistic(stat.test.Ind.ibd2.blocked_CDHC),coin::statistic(stat.test.Ind.ibd2.blocked_UCHC),coin::statistic(stat.test.Ind.ibd2.blocked_CDUC)),
+  p=c(coin::pvalue(stat.test.Ind.ibd2.blocked_CDHC),coin::pvalue(stat.test.Ind.ibd2.blocked_UCHC),coin::pvalue(stat.test.Ind.ibd2.blocked_CDUC))
+)
+
+stat.test.Ind.ibd2.blocked$p.adj<-p.adjust(stat.test.Ind.ibd2.blocked$p, method="BH")
+stat.test.Ind.ibd2.blocked<-stat.test.Ind.ibd2.blocked%>%add_significance()
+stat.test.Ind.ibd2.blocked<-stat.test.Ind.ibd2.blocked%>%mutate(groups=paste0('c("',group1,'","',group2,'")'))
+stat.test.Ind.ibd2.blocked$y.position=c(1.02,0.95,1.09)
+stat.test.Ind.ibd2.blocked$xmin=c(3,2,3)
+stat.test.Ind.ibd2.blocked$xmax=c(1,1,2)
+stat.test.Ind.ibd2.blocked<-stat.test.Ind.ibd2.blocked%>%
+  mutate(p.adj.signif=ifelse(p.adj>0.05 & p.adj<0.1, "o", p.adj.signif))
+stat.test.Ind.ibd2.blocked<-stat.test.Ind.ibd2.blocked%>%
+  mutate(effectSize=statistic/sqrt(n1+n2))
+```
+
+```{r}
+beta.pair.p2<-ggplot(df.beta.pair) +
+  geom_violin(aes(IBD2, average, fill = IBD)) +
+  geom_boxplot(aes(IBD2, average, fill = IBD),fill="white",width=0.2,alpha=0.5) +
+  scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2))+
+  theme_bw()+
+  ylab(paste0("Mean distance","\n","per individual")) +
+  theme(axis.title.x = element_blank())+
+  stat_pvalue_manual(stat.test.Ind.ibd2.blocked,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))
+  #labs(title = "Average distances between 4 consecutive samples across conditions")
+beta.pair.p2
+```
+
+
+
+
+IBD2b
+
+```{r}
+beta.pair.p2b<-ggplot(df.beta.pair) +
+  geom_violin(aes(IBD2, average, fill = IBD2)) +
+  geom_boxplot(aes(IBD2, average, fill = IBD2),fill="white",width=0.2,alpha=0.5) +
+  scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2))+
+  theme_bw()+
+  ylab(paste0("Mean dissimilarity","\n","per individual")) +
+  theme(axis.title.x = element_blank())+
+  stat_pvalue_manual(stat.test.Ind.ibd2.blocked,size = 3)+ 
+  scale_y_continuous(expand = expansion(mult = 0.1))
+beta.pair.p2b
+```
+
+
+```{r fig.width=8, fig.height=3}
+beta.pair.p2b.cohort<-ggplot(df.beta.pair%>%mutate(cohort=gsub("Fang_UCSD_","",cohort))) +
+  geom_violin(aes(IBD2, average, fill = IBD2)) +
+  geom_boxplot(aes(IBD2, average, fill = IBD2),fill="white",width=0.2,alpha=0.5) +
+  geom_jitter(aes(IBD2, average, fill = IBD2), size=1, alpha=0.5)+
+  scale_fill_manual(values=col_IBD2, breaks=names(col_IBD2), name="")+
+  theme_bw()+
+  ylab(paste0("Mean dissimilarity","\n","per individual")) +
+  theme(axis.title.x = element_blank())+
+  facet_grid(~cohort)+
+  scale_y_continuous(expand = expansion(mult = 0.1))
+
+beta.pair.p2b.cohort
+
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig_meanIndDist.pdf"),width=8,height=3)
+beta.pair.p2b.cohort
+dev.off()
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig_meanIndDist.png"),beta.pair.p2b.cohort,width=8,height=3)
+
+```
+
+```{r fig.width=8, fig.height=3}
+p_avDist_deltaHR_4TP<-ggplot(df.beta.pair, aes(log2(maxdist), log2(deltaHumanRds))) +
+  geom_point(aes(color=cohort), alpha=0.3, size=1.5) +
+  geom_smooth(aes(color=cohort), method = "lm",se = FALSE) +
+  theme_bw() +
+  facet_grid(.~IBD2, scales="free")+ 
+  scale_colour_brewer(palette = "Dark2")+
+  xlab("log2(Maxium pairwise distance among 4 consecutive samples)")+
+  ylab(paste0("Maximum","\n","delta human reads"))
+p_avDist_deltaHR_4TP
+
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig_maxdeltaHR_maxDist.pdf"),width=8,height=3)
+p_avDist_deltaHR_4TP
+dev.off()
+```
+
+```{r fig.width=12, fig.height=3}
+perInd_dist_vs_deltaHR_meta_slope.df<-perInd_dist_vs_deltaHR_meta_slope.df%>%
+  mutate(cohort=as.character(cohort))%>%
+  mutate(cohort=ifelse(cohort=="Fang_UCSD_IBD_Biobank","IBD_Biobank",cohort))%>%
+  mutate(IBD2=as.character(IBD2))%>% 
+  mutate(IBD2=factor(IBD2, levels=c("control","UC","CD")))
+
+perInd_dist_vs_deltaHR_meta_singleslope.df<-perInd_dist_vs_deltaHR_meta_slope.df%>%
+  distinct(IndividualID2, .keep_all = TRUE)
+
+slope2_summary_Ind<-perInd_dist_vs_deltaHR_meta_singleslope.df%>%
+  group_by(cohort,IBD2)%>%
+  count(slope2)%>%
+  spread(slope2,n)
+
+cohort_summary_Ind<-perInd_dist_vs_deltaHR_meta_singleslope.df%>%
+  group_by(cohort)%>%
+  count()
+
+
+slope_summary_Ind<-perInd_dist_vs_deltaHR_meta_singleslope.df%>%
+  group_by(cohort,IBD2)%>%
+  summarize(mean_slope=mean(slope))
+
+slopeB_summary_Ind<-perInd_dist_vs_deltaHR_meta_singleslope.df%>%
+  group_by(cohort,IBD2,slope2)%>%
+  summarize(mean_slope=mean(slope))
+
+# p_pairDist_deltaHR<-ggplot(perInd_dist_vs_deltaHR_meta_slope.df, 
+#   aes(microbiome_bc_distance_log2,delta_human_reads_log2))+
+#   geom_point(alpha=0.2, size=0.5, color="grey40")+
+#   geom_smooth(aes(color=slope2, group = factor(IndividualID2)),method="lm", se = FALSE, size=0.3)+
+#   #theme(legend.position="none")+
+#   facet_grid(~IBD2,scales="free")+
+#   scale_color_manual(#values=c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","grey20","red","#E6AB02"),
+#     values=c("grey20","red"))+
+#   theme_bw()+
+#   xlab("log2(Pairwise distances between timepoints)")+
+#   ylab(paste0("log2(Delta human reads","\n", "between timepoints)"))
+# p_pairDist_deltaHR
+
+slope2_summary_Ind_all<-slope2_summary_Ind%>%
+  group_by(IBD2)%>%
+  summarize(negative=sum(neg),positive=sum(pos))%>%
+  mutate(negative_perc=paste0(negative," (",round((negative/(negative+positive))*100,0),"%)"))%>%
+  mutate(positive_perc=paste0(positive," (",round((positive/(negative+positive))*100,0),"%)"))
+
+p_pairDist_deltaHR<-ggplot(perInd_dist_vs_deltaHR_meta_slope.df, 
+  aes(microbiome_bc_distance_log2,delta_human_reads_log2))+
+  geom_point(alpha=0.2, size=0.5, color="grey40")+
+  geom_smooth(method="lm" , se = FALSE, size=0.5,color="red")+ #method="lm", 
+  geom_text(data=slope2_summary_Ind_all, aes(label=paste0("# positive: ",positive_perc),x=-4,y=-25), color="red")+
+  geom_text(data=slope2_summary_Ind_all, aes(label=paste0("# negative: ",negative_perc),x=-4,y=-28), color="grey20")+
+  #theme(legend.position="none")+
+  facet_grid(~IBD2)+
+  scale_color_manual(#values=c("#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","grey20","red","#E6AB02"),
+    values=c("grey20","red"))+
+  theme_bw()+
+  xlab("log2(Pairwise distances between timepoints)")+
+  ylab(paste0("log2(Delta human reads","\n", "between timepoints)"))
+p_pairDist_deltaHR
+
+
+slope2_summary_Ind_all_cohort<-slope2_summary_Ind%>%
+  group_by(cohort,IBD2)%>%
+  summarize(negative=sum(neg),positive=sum(pos))%>%
+  mutate(negative_perc=paste0(negative," (",round((negative/(negative+positive))*100,0),"%)"))%>%
+  mutate(positive_perc=paste0(positive," (",round((positive/(negative+positive))*100,0),"%)"))%>%
+  mutate(neg_perc=paste0(round((negative/(negative+positive))*100,0),"%"))%>%
+  mutate(pos_perc=paste0(round((positive/(negative+positive))*100,0),"%"))
+
+disthr_sig_perCohort<-dist_hr_indNest_log2_lm_perCohort%>%
+  t()%>%
+  as.data.frame()%>%
+  rownames_to_column("cohort")%>%
+  mutate(significance=ifelse(p<0.001,"***",ifelse(p<0.01,"**",ifelse(p<0.05,"*",ifelse(p<0.1,".","")))))%>%
+  mutate(cohortsig=paste(cohort,significance))
+
+cohortsig<-disthr_sig_perCohort$cohortsig
+names(cohortsig)<-disthr_sig_perCohort$cohort
+
+perInd_dist_vs_deltaHR_meta_slope.df$cohort2<-factor(perInd_dist_vs_deltaHR_meta_slope.df$cohort, levels=c("Lewis","USA","IBD_Biobank","HMP2","HMP","LIBD"))
+
+
+p_pairDist_deltaHR2<-ggplot(perInd_dist_vs_deltaHR_meta_slope.df, 
+  aes(microbiome_bc_distance_log2,delta_human_reads_log2))+
+  geom_point(alpha=0.2, size=0.5, aes(color=IBD2))+#color="grey40")+
+  geom_smooth(aes(color=IBD2),method="lm" , se = FALSE, size=0.5)+ #method="lm", 
+  scale_color_manual(values=col_IBD2)+
+  facet_grid(~cohort2, labeller=labeller(cohort2=cohortsig))+
+  theme_bw()+
+  xlab("log2(Intra-individual dissimilarities between timepoints)")+
+  ylab(paste0("log2(Difference inflammation","\n", "index between timepoints)"))+
+  ggtitle("Intra-individual correlation of inflammation index and microbiome dissimilarity (p < 2e-16 ***)")
+p_pairDist_deltaHR2
+
+cohortN<-paste0(cohort_summary_Ind$cohort," n=",cohort_summary_Ind$n)
+names(cohortN)<-cohort_summary_Ind$cohort
+
+perInd_dist_vs_deltaHR_meta_singleslope.df$cohort2<-factor(perInd_dist_vs_deltaHR_meta_singleslope.df$cohort, levels=c("Lewis","USA","IBD_Biobank","HMP2","HMP","LIBD"))
+slope2_summary_Ind_all_cohort$cohort2<-factor(slope2_summary_Ind_all_cohort$cohort, levels=c("Lewis","USA","IBD_Biobank","HMP2","HMP","LIBD"))
+annot<-data.frame(x="control", y=0.38, lab=c("Positive iCC:"),cohort="Lewis")
+annot$cohort2<-factor(annot$cohort, levels=c("Lewis","USA","IBD_Biobank","HMP2","HMP","LIBD"))
+
+p_pindSlope_deltaHR<-ggplot(perInd_dist_vs_deltaHR_meta_singleslope.df, 
+  aes(IBD2,slope))+
+  geom_hline(yintercept=0, linetype=2, color="grey50")+
+  geom_violin(aes(fill=IBD2))+
+  geom_boxplot(outlier.size = 0.1, width=0.15)+
+  #geom_text(data=slope2_summary_Ind_all_cohort, aes(x=IBD2,y=0.39, label=positive), size=3)+
+  geom_text(data=annot, aes(x=x,y=y, label=lab), size=3.3, hjust=0.3)+
+  geom_text(data=slope2_summary_Ind_all_cohort, aes(x=IBD2,y=0.38, label=pos_perc), size=3.5)+
+  scale_fill_manual(values=col_IBD2)+
+  ylim(-0.25,0.4)+
+  theme_bw()+
+  ylab(paste0("Correlation coefficient\nper individual"))+
+  theme(axis.text.x=element_blank(),
+        axis.title.x=element_blank(),
+        axis.ticks.x = element_blank())+
+  facet_grid(~cohort2, labeller=labeller(cohort2=cohortN))
+p_pindSlope_deltaHR
+```
+
+```{r}
+annot2<-data.frame(x=c("control","control"), y=c(0.25,0.75), lab=c("Positive","Negative"),cohort=c("Lewis","Lewis"))
+annot2$cohort2<-factor(annot2$cohort, levels=c("Lewis","USA","IBD_Biobank","HMP2","HMP","LIBD"))
+
+slope2_summary_Ind_all_cohort%>%
+  ungroup()%>%
+  filter(IBD2=="CD")%>%
+  mutate(pos=as.numeric(gsub("%","",pos_perc)))%>%
+  summarize(mean=mean(pos),median=median(pos))
+
+slope2_summary_Ind_all_cohort%>%
+  ungroup()%>%
+  filter(IBD2=="UC")%>%
+  mutate(pos=as.numeric(gsub("%","",pos_perc)))%>%
+  summarize(mean=mean(pos),median=median(pos))
+
+slope2_summary_Ind_all_cohort%>%
+  ungroup()%>%
+  filter(IBD2=="control")%>%
+  mutate(pos=as.numeric(gsub("%","",pos_perc)))%>%
+  summarize(mean=mean(pos),median=median(pos))
+
+p_pind_barHR<-ggplot(slope2_summary_Ind_all_cohort%>%gather(slope,n,c(negative,positive)),
+  aes(IBD2,n))+
+  geom_bar(stat="identity",position="fill",aes(fill=slope))+
+  geom_hline(yintercept=0.5, linetype=2, color="grey50")+
+  geom_text(data=annot2, aes(x=x,y=y, label=lab), size=3.3, hjust=0.2, color=c("Salmon","#40B0A6"))+
+  #geom_text(data=slope2_summary_Ind_all_cohort, aes(x=IBD2,y=45, label=pos_perc), size=3.5, hjust=0, color="Salmon")+
+  scale_fill_manual(values = c("#40B0A6","salmon"), na.value = "white", breaks=c("negative","positive"))+
+  #ylim(-0.25,0.4)+
+  theme_bw()+
+  ylab(paste0("Number of individuals"))+
+  theme(#axis.text.x=element_blank(),
+        axis.title.x=element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position="top")+
+  facet_grid(~cohort2, labeller=labeller(cohort2=cohortN))+
+  guides(fill = guide_legend(keywidth=0.3,keyheight=0.1,default.unit="cm", ""))
+p_pind_barHR
+```
+
+### comparison of high vs low BD dissimilarities
+
+```{r}
+dist.HL_hr_cond_gat_intrChrt<-readRDS(paste0(PATHanalNov2023,"humanReads/dist.HL_hr_cond_gat_intrChrt.rds"))
+dist.HL_hr_cond_gat_intrChrt<-dist.HL_hr_cond_gat_intrChrt%>%
+  mutate(HumanRds_group1=gsub("HR","Iidx",HumanRds_group1))%>%
+  mutate(HumanRds_group2=gsub("HR","Iidx",HumanRds_group2))%>%
+  mutate(comparison=gsub("HR","Iidx",comparison))%>%
+  mutate(comparison2=gsub("HR","Iidx",comparison2))
+
+dist.HL_hr_ind_gat_intraInd<-readRDS(paste0(PATHanalNov2023,"humanReads/dist.HL_hr_ind_gat_intraInd.rds"))
+dist.HL_hr_ind_gat_intraInd<-dist.HL_hr_ind_gat_intraInd%>%
+  mutate(HumanRds_group1=gsub("HR","Iidx",HumanRds_group1))%>%
+  mutate(HumanRds_group2=gsub("HR","Iidx",HumanRds_group2))%>%
+  mutate(comparison=gsub("HR","Iidx",comparison))
+
+col_comp<-c("darkorange1","khaki2","#1F78B4")
+names(col_comp)<-c("control-HighIidx","control-LowIidx","control")
+ctrllabs<-c("control-flare","control-remission","control")
+
+testtest<-stat.test.Ind.ibd2.blocked%>%
+  mutate(p.adj.signif="***")%>%
+  select(c(p.adj.signif,y.position,xmin,xmax,group1,group2))
+testtest$y.position<-c(1.2,1.1,1.3)
+testtest$group1<-c("control-HighIidx","control-HighIidx","control-LowIidx")
+testtest$group2<-c("control-LowIidx","control","control")
+
+
+p_dist_HR_all<-
+  ggplot(dist.HL_hr_cond_gat_intrChrt, aes(x=comparison2,y=dist))+
+  geom_violin(aes(fill=comparison2))+
+  geom_boxplot(outlier.size = 0.1, width=0.15)+  
+  stat_pvalue_manual(testtest,size = 3)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45,hjust=1),
+        legend.position="bottom",
+        legend.direction="vertical",
+        legend.title = element_blank(),
+        legend.key.size = unit(0, 'lines'),
+        legend.margin = margin(-2, -2, -2, -2))+
+  scale_fill_manual(values=col_comp, breaks=names(col_comp), labels=ctrllabs)+
+  ylab("Inter-individual\nBC dissimilarity")+
+  theme(axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks.x=element_blank())+
+  guides(fill = guide_legend(keywidth=0.3,keyheight=0.1,default.unit="cm"))
+p_dist_HR_all
+
+col_comp2<-c("darkorange1","khaki2","violet")
+names(col_comp2)<-c("HighIidx","LowIidx","LowIidx-HighIidx")
+remlabs<-c("flare-like","remission-like","flare-remission")
+
+testtest2<-stat.test.Ind.ibd2.blocked%>%
+  select(c(p.adj.signif,y.position,xmin,xmax,group1,group2))
+testtest2$y.position<-c(1.2,1.1,1.3)
+testtest2$p.adj.signif<-c("ns","***","***")
+testtest2$group1<-c("HighIidx","HighIidx","LowIidx")
+testtest2$group2<-c("LowIidx","LowIidx-HighIidx","LowIidx-HighIidx")
+
+p_iiv_all<-ggplot(dist.HL_hr_ind_gat_intraInd, aes(x=comparison,y=dist))+
+  geom_violin(aes(fill=comparison))+
+  geom_boxplot(outlier.size = 0.1, width=0.15)+
+  stat_pvalue_manual(testtest2,size = 3)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=45,hjust=1),
+        legend.position="bottom",
+        legend.direction="vertical",
+        legend.title = element_blank(),
+        legend.key.size = unit(0, 'lines'),
+        legend.margin = margin(-2, -2, -2, -2))+
+  scale_fill_manual(values=col_comp2, breaks=names(col_comp2),labels=remlabs)+
+  ylab("Intra-individual\nBC dissimilarity")+
+  theme(axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks.x=element_blank())+
+  guides(fill = guide_legend(keywidth=0.3,keyheight=0.1,default.unit="cm"))
+
+p_iiv_all
+
+
+(dist.HL_hr_ind_gat_intraInd%>%filter(HumanRds_group1=="LowIidx"))$SmplID1%>%unique()%>%length()
+
+```
+
+### combine crosssectional and longitudinal
+
+```{r}
+combi1<-plot_grid(l_spec.long.distances.plots.20[[1]]+ggtitle("Longitudinal cohorts - violin-plot displays sample 1"),beta.pair.p1+theme(legend.position = "none")+ggtitle("Intra-individual"),ncol=2,rel_widths = c(2.5,1), align = "h", axis = "b", labels=c("C","D"))
+#combi1
+
+combi2<-plot_grid(df_all_cross.plot+ggtitle("Crossectional cohorts"),combi1,ncol=1,rel_heights = c(2,1), labels=c("B",""))
+#combi2
+
+combi3<-plot_grid(og.dbrdaIBD2,combi2,ncol=2,rel_widths = c(1,1.2), align = "v", axis = "lr", labels=c("A",""))
+combi3b<-plot_grid(og.dbrda,combi2,ncol=2,rel_widths = c(1,1.2), align = "v", axis = "lr", labels=c("A",""))
+#combi3
+
+combi3b
+#ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/Fig_Beta.ibd.pdf"),combi3,height=7,width=15)
+#ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/Fig_Beta.ibdb.pdf"),combi3b,height=7,width=15)
+
+```
+
+
+```{r}
+combi1ibd2b<-plot_grid(l_spec.long.distances.ibd2b.plots.20[[1]]+ggtitle("Longitudinal cohorts - violin-plot displays sample 1"),beta.pair.p2b+theme(legend.position = "none")+ggtitle("Intra-individual"),ncol=2,rel_widths = c(3.8,1), align = "h", axis = "b", labels=c("C","D"))
+
+combi2ibd2b<-plot_grid(df_all_cross.plotIBD2b+ggtitle("Crossectional cohorts"),combi1ibd2b,ncol=1,rel_heights = c(2,1), labels=c("B",""))
+
+combi3ibd2b<-plot_grid(og.dbrdaIBD2,combi2ibd2b,ncol=2,rel_widths = c(1,1.5), align = "v", axis = "lr", labels=c("A",""))
+combi3ibd2b
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/Fig_Beta.ibd2b.pdf"),combi3ibd2b,height=7,width=17)
+
+```
+
+```{r}
+
+combi2ibd2b_supp<-plot_grid(df_all_cross.plotIBD2b+ggtitle("Crossectional cohorts"),l_spec.long.distances.ibd2b.plots.20[[1]]+ggtitle("Longitudinal cohorts - violin-plot displays sample 1"),ncol=1,rel_heights = c(2,1), labels=c("A","B"))
+
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_Fig_centroidCohorts.pdf"),height=7,width=10)
+combi2ibd2b_supp
+dev.off()
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_Fig_centroidCohorts.png"),combi2ibd2b_supp,height=7,width=10)
+```
+
+
+
+```{r, fig.height= 8, fig.width=14}
+
+blockedViolins<-plot_grid(  
+  df_all_cross.plotIBD2b_mean+ggtitle("Crossectional\ncohorts")+theme(legend.position="none", title = element_text(size=8.5), axis.text.x=element_text(angle=45, hjust=1)),
+  l_spec.long.distances.ibd2b.blocked.plots.20[[1]]+ggtitle("Resampling\nlongit. cohorts")+theme(title = element_text(size=8.5), axis.text.x=element_text(angle=45, hjust=1)),
+  beta.pair.p2b+theme(legend.position = "none")+ggtitle("Intra-individual\nmean BC")+theme(title = element_text(size=8.5), axis.text.x=element_text(angle=45, hjust=1)),
+  p_dist_HR_all+ggtitle("Inflam. groups\ninter-indiv. BC")+theme(title = element_text(size=8.5)),
+  p_iiv_all+ggtitle("Inflam. groups\nintra-indiv. BC")+theme(title = element_text(size=8.5)),
+  nrow=1,rel_widths = c(1,1,1,1,1), align = "h", axis = "t", labels=c("C","D","E","F","G")
+  )
+  
+# IntraIndCors<-plot_grid(
+#   p_avDist_deltaHR_4TP+ggtitle("Maximum distance and delta human reads per individual")+theme(legend.position="none"),
+#   p_pairDist_deltaHR+ggtitle("Intra-individual correlation of timepoint distances and delta human reads")+theme(legend.position="none"),
+#   ncol=1,rel_heights = c(1,1), align = "v", axis = "b", labels=c("D","E")
+#   )
+
+
+# blockedViolins_IntraIndCors<-plot_grid(
+#   blockedViolins,
+#   IntraIndCors,
+#   ncol=1, rel_heights=c(1,2,2)
+# )
+
+p_pind_deltaHR<-plot_grid(p_pairDist_deltaHR2 + theme(legend.position = "none",title = element_text(size=8.5)),
+                          p_pind_barHR + ggtitle("Individuals’ correlation direction of Δ inflammation ~ Δ microbiome composition") + theme(legend.position = "none",title = element_text(size=8.5)),
+                          ncol=1,align="v",axis="l", labels=c("H","I")
+                          )
+
+
+blockedViolins_IntraIndCors<-plot_grid(
+  blockedViolins,
+  p_pind_deltaHR,
+  ncol=1, rel_heights=c(1,2), align="v", axis="lr"
+)
+blockedViolins_IntraIndCors
+
+
+p2 <- cowplot::ggdraw() + cowplot::draw_image(paste0(PATHanalNov2023,"Downstream/Results/Figures/resampling.png"))
+
+p2<-plot_grid(p2,NULL, nrow=1, labels=c("Resampling strategy",""), rel_widths = c(10,0.5),hjust = 0, vjust= 1, label_fontface="plain")
+
+#p2
+chrts_overview.obj.tab2<-ggtexttable(chrts_overview.obj, rows = NULL, theme = ttheme("light", base_size=10, padding = unit(c(3, 2), "mm")))
+p3<-plot_grid(chrts_overview.obj.tab2,NULL, nrow=1, labels=c("Cohort overview",""), rel_widths = c(10,0.5),hjust = 0, vjust= 1, label_fontface="plain",label_size = 11)
+
+combi1ibd2b.blocked<-plot_grid(
+  plot_grid(p3,og.dbrdaIBD2,ncol=1,labels=c("A","B"), align = "v", axis = "l", hjust = 0, vjust= 1, rel_heights = c(1.5,2)),
+  blockedViolins_IntraIndCors,
+  ncol=2,rel_widths = c(1,1.4), align = "h", axis = "b")
+combi1ibd2b.blocked
+
+
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/Fig_Beta.ibd2b.blocked.pdf"),combi1ibd2b.blocked,height=8,width=14)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/Fig_Beta.ibd2b.blocked.png"),combi1ibd2b.blocked,height=8,width=14)
+
+```

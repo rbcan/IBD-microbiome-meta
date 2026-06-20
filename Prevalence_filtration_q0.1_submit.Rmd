@@ -1,0 +1,246 @@
+---
+title: "Prevalence filtration"
+author: "SRomano (adapted by RAnsorge)"
+date: '2023-11-11'
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+# Install load packages
+```{r setup, include=FALSE}
+
+list.of.packages <- c("dplyr", "reshape2", "meta", "ggplot2", "lattice")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+
+list.of.bioc <- c("phyloseq", "microbiome")
+new.packages <- list.of.bioc[!(list.of.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages)) BiocManager::install(new.packages)
+
+library(meta)
+library(DHARMa)
+library(nlme)
+library(ggplot2)
+library(phyloseq)
+library(dplyr)
+library(microbiome)
+library(reshape2)
+library(meta)
+library(lattice)
+#library(broomExtra)
+
+```
+
+```{r}
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+q<-0.1
+```
+
+# Load and clean data
+Load the abundance file and the metadata
+
+```{r, message=F}
+
+spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+dim(spec)
+
+rownames(spec) %>% tail
+```
+
+The last row is "other". This will be used to calcualte the relative abundances but will then be removed
+```{r, message =F, warning =F}
+
+spec.tss<-as.data.frame(prop.table(as.matrix(spec), 2))
+# now remove other
+
+spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
+
+dim(spec)[1]
+```
+There are `dim(spec)[1]` Species and 4839 samples
+
+
+# Load and format the metadata
+
+```{r, message =F, warning =F}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+dim(meta)
+sapply(meta, class)
+
+meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
+meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
+```
+
+Load function and check prevalences
+```{r}
+source(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/Pevalence_functions.r"))
+# Need to split datasets
+spec<-as.data.frame(t(spec))
+all(rownames(spec) == meta$SmplID)
+
+spec$cohort<-meta$Cohort_precise
+
+l_spec<-split(spec, f = as.factor(spec$cohort))
+# remove cohort
+l_spec<-lapply(l_spec, function(x) x[, which(names(x)!= "cohort")])
+l_spec<-lapply(l_spec, function(x) x[, which(names(x)!= "other")])
+
+l_spec<-lapply(l_spec, function(x) as.data.frame(t(x)))
+
+# prevalence filtration (prev is in %)
+spec_3x2.5<-prevalence.matching(l_spec, n.studies = 3, prev = 2.5) # for now choose 3 studies and 2.5% prevalence
+length(spec_3x2.5)
+
+write.csv(spec_3x2.5,paste0(PATHanalNov2023,"Downstream/Results/prev.filt.MGS.txt"), row.names = FALSE)
+
+spec_5x10<-prevalence.matching(l_spec, n.studies = 3, prev = 10)
+length(spec_5x10)
+spec_5x20<-prevalence.matching(l_spec, n.studies = 3, prev = 20)
+length(spec_5x20)
+spec_5x30<-prevalence.matching(l_spec, n.studies = 3, prev = 30)
+length(spec_5x30)
+
+```
+
+# Filter the MGS based on presence in at least 3 studies and prevalence of at least 2.5%
+```{r}
+l.meta<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.rds"))
+filtMGS<-spec_3x2.5
+length(filtMGS) # number of MGS after prevalence filtration
+
+l.meta.prevfilt<-lapply(l.meta, function(x){
+  x.prev<-x %>%
+  filter(bins%in%filtMGS)%>%
+  mutate(p.adjust=p.adjust(pval.random, method = "fdr"))
+  x.prev
+})
+
+saveRDS(l.meta.prevfilt, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.prevfilt.rds"))
+
+```
+
+# Subset sign bin and plot concordances (prevalence-filtered data)
+The strategy below was taken from this post: https://stackoverflow.com/questions/53575257/make-binary-presence-absence-data-matrix-from-multiple-lists-in-r
+
+```{r, message =F, warning =F}
+l.meta.prevfilt.sign<-lapply(l.meta.prevfilt, function(x) subset(x,  p.adjust < q))
+# create the datafram with the bins
+saveRDS(l.meta.prevfilt.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.prevfilt.sign0.1.rds"))
+
+df.all.prevfilt<-do.call(rbind, l.meta.prevfilt.sign)
+df.all.prevfilt$in20<-vector(length = nrow(df.all.prevfilt))
+for(i in 1: nrow(df.all.prevfilt)){
+  df.all.prevfilt$in20[i]<-ifelse(sum(df.all.prevfilt$bins == df.all.prevfilt$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all.prevfilt<-df.all.prevfilt[!duplicated(df.all.prevfilt$bins),] # select only duplicated, meaning one per mGS
+tax.prevfilt.sign<-df.all.prevfilt[df.all.prevfilt$in20 == TRUE,]$bins
+
+length(tax.prevfilt.sign)
+nrow(df.all.prevfilt)-length(tax.prevfilt.sign)
+```
+
+# Select only sign taxa (prevalence-filtered data)
+```{r}
+l.meta.prevfilt.sign.20<-lapply(l.meta.prevfilt.sign, function(x) subset(x, bins %in% tax.prevfilt.sign))
+
+saveRDS(l.meta.prevfilt.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.prevfilt.sign0.1.20.rds"))
+```
+
+
+# CD-HC / UC-HC / CD-UC: Filter the MGS based on presence in at least 3 studies and prevalence of at least 2.5%
+```{r}
+filtMGS<-spec_3x2.5
+length(filtMGS) # number of MGS after prevalence filtration
+
+l.meta.cdhc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.rds"))
+l.meta.uchc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.rds"))
+l.meta.cduc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.rds"))
+
+l.meta.cdhc.prevfilt<-lapply(l.meta.cdhc, function(x){
+  x.prev<-x %>%
+  filter(bins%in%filtMGS)%>%
+  mutate(p.adjust=p.adjust(pval.random, method = "fdr"))
+  x.prev
+})
+
+l.meta.uchc.prevfilt<-lapply(l.meta.uchc, function(x){
+  x.prev<-x %>%
+  filter(bins%in%filtMGS)%>%
+  mutate(p.adjust=p.adjust(pval.random, method = "fdr"))
+  x.prev
+})
+
+l.meta.cduc.prevfilt<-lapply(l.meta.cduc, function(x){
+  x.prev<-x %>%
+  filter(bins%in%filtMGS)%>%
+  mutate(p.adjust=p.adjust(pval.random, method = "fdr"))
+  x.prev
+})
+
+saveRDS(l.meta.cdhc.prevfilt, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.cdhc.prevfilt.rds"))
+saveRDS(l.meta.uchc.prevfilt, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.uchc.prevfilt.rds"))
+saveRDS(l.meta.cduc.prevfilt, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.cduc.prevfilt.rds"))
+```
+
+# Subset sign bin and plot concordances (prevalence-filtered data)
+
+```{r, message =F, warning =F}
+l.meta.cdhc.prevfilt.sign<-lapply(l.meta.cdhc.prevfilt, function(x) subset(x,  p.adjust < q))
+l.meta.uchc.prevfilt.sign<-lapply(l.meta.uchc.prevfilt, function(x) subset(x,  p.adjust < q))
+l.meta.cduc.prevfilt.sign<-lapply(l.meta.cduc.prevfilt, function(x) subset(x,  p.adjust < q))
+# create the datafram with the bins
+saveRDS(l.meta.cdhc.prevfilt.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.cdhc.prevfilt.sign0.1.rds"))
+saveRDS(l.meta.uchc.prevfilt.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.uchc.prevfilt.sign0.1.rds"))
+saveRDS(l.meta.cduc.prevfilt.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.cduc.prevfilt.sign0.1.rds"))
+
+df.all.cdhc.prevfilt<-do.call(rbind, l.meta.cdhc.prevfilt.sign)
+df.all.cdhc.prevfilt$in20<-vector(length = nrow(df.all.cdhc.prevfilt))
+for(i in 1: nrow(df.all.cdhc.prevfilt)){
+  df.all.cdhc.prevfilt$in20[i]<-ifelse(sum(df.all.cdhc.prevfilt$bins == df.all.cdhc.prevfilt$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all.cdhc.prevfilt<-df.all.cdhc.prevfilt[!duplicated(df.all.cdhc.prevfilt$bins),] # select only duplicated, meaning one per mGS
+tax.cdhc.prevfilt.sign<-df.all.cdhc.prevfilt[df.all.cdhc.prevfilt$in20 == TRUE,]$bins
+
+df.all.uchc.prevfilt<-do.call(rbind, l.meta.uchc.prevfilt.sign)
+df.all.uchc.prevfilt$in20<-vector(length = nrow(df.all.uchc.prevfilt))
+for(i in 1: nrow(df.all.uchc.prevfilt)){
+  df.all.uchc.prevfilt$in20[i]<-ifelse(sum(df.all.uchc.prevfilt$bins == df.all.uchc.prevfilt$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all.uchc.prevfilt<-df.all.uchc.prevfilt[!duplicated(df.all.uchc.prevfilt$bins),] # select only duplicated, meaning one per mGS
+tax.uchc.prevfilt.sign<-df.all.uchc.prevfilt[df.all.uchc.prevfilt$in20 == TRUE,]$bins
+
+df.all.cduc.prevfilt<-do.call(rbind, l.meta.cduc.prevfilt.sign)
+df.all.cduc.prevfilt$in20<-vector(length = nrow(df.all.cduc.prevfilt))
+for(i in 1: nrow(df.all.cduc.prevfilt)){
+  df.all.cduc.prevfilt$in20[i]<-ifelse(sum(df.all.cduc.prevfilt$bins == df.all.cduc.prevfilt$bins[i]) == 20, "TRUE", "FALSE")
+}
+df.all.cduc.prevfilt<-df.all.cduc.prevfilt[!duplicated(df.all.cduc.prevfilt$bins),] # select only duplicated, meaning one per mGS
+tax.cduc.prevfilt.sign<-df.all.cduc.prevfilt[df.all.cduc.prevfilt$in20 == TRUE,]$bins
+
+####
+length(tax.cdhc.prevfilt.sign)
+nrow(df.all.cdhc.prevfilt)-length(tax.cdhc.prevfilt.sign)
+nrow(df.all.cdhc.prevfilt)
+
+length(tax.uchc.prevfilt.sign)
+nrow(df.all.uchc.prevfilt)-length(tax.uchc.prevfilt.sign)
+
+length(tax.cduc.prevfilt.sign)
+nrow(df.all.cduc.prevfilt)-length(tax.cduc.prevfilt.sign)
+```
+
+# Select only sign taxa (prevalence-filtered data)
+```{r}
+l.meta.cdhc.prevfilt.sign.20<-lapply(l.meta.cdhc.prevfilt.sign, function(x) subset(x, bins %in% tax.cdhc.prevfilt.sign))
+l.meta.uchc.prevfilt.sign.20<-lapply(l.meta.uchc.prevfilt.sign, function(x) subset(x, bins %in% tax.uchc.prevfilt.sign))
+l.meta.cduc.prevfilt.sign.20<-lapply(l.meta.cduc.prevfilt.sign, function(x) subset(x, bins %in% tax.cduc.prevfilt.sign))
+
+saveRDS(l.meta.cdhc.prevfilt.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.cdhc.prevfilt.sign0.1.20.rds"))
+saveRDS(l.meta.uchc.prevfilt.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.uchc.prevfilt.sign0.1.20.rds"))
+saveRDS(l.meta.cduc.prevfilt.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.cduc.prevfilt.sign0.1.20.rds"))
+```
+

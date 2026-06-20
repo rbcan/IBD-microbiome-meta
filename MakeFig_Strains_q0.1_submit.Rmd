@@ -1,0 +1,472 @@
+---
+title: "Figure Strains"
+author: "Rebecca Ansorge"
+date: "31/03/2023"
+output: html_document
+---
+
+# Make strain figure
+
+## Load libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+library(formattable)
+library(cowplot)
+library(ggtree)
+library(ggtreeExtra)
+library(ggnewscale)
+library(ape)
+library(ggVennDiagram)
+library(ggpubr)
+```
+
+## Import data
+```{r}
+#PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#PATHanalNov2023<-"~/Library/CloudStorage/OneDrive-Personal/analysisNov2023/"
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+PATH<-"~/Documents/Rebecca/onedrive/submission/natcom/revision/checks/"
+
+```
+
+```{r}
+# define color palette
+
+#col_IBD2<-c("#E8A400","#E31A1C","#FB9A99","#1F78B4","#1F78B4")
+col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4")
+names(col_IBD2)<-c("IBD","CD","UC","healthy","control")
+
+
+
+#display.brewer.pal(n=12, name="Paired")
+#brewer.pal(n=12, name="Paired")
+```
+
+```{r}
+strainR2vsTE.incTips<-readRDS(paste0(PATHanalNov2023,"strains/RDS/strainR2vsTE.incTips_q0.1.June23.rds"))
+strainR2vsTE.inclNonSig<-readRDS(paste0(PATHanalNov2023,"strains/RDS/strainR2vsTE.inclNonSig_q0.1.June23.rds"))
+x<-readRDS(paste0(PATHanalNov2023,"strains/RDS/StrainClust.overlapIBD_IBD2.June23.rds"))
+y<-readRDS(paste0(PATHanalNov2023,"strains/RDS/StrainClust.overlapIBD_IBD2.variable.June23.rds"))
+
+# lm correlating strainR2 and DA after accounting for number of tips
+strainR2vsDA.lm<-readRDS(paste0(PATHanalNov2023,"strains/RDS/strainR2vsDA.lm.June23_q0.1.rds"))
+
+# import top MGS shown in DA fig
+DAmeans.topMGS.tax<-readRDS(paste0(PATHanalNov2023,"Downstream/Results/MGS.toptax_DAFigq0.1.rds"))
+
+```
+
+```{r}
+# count robust and variable MGS
+strainR2vsTE.inclNonSig%>%
+  group_by(robustness)%>%
+  count()
+
+strainR2vsTE.incTips%>%
+  group_by(robustStrains)%>%
+  count()
+
+strainR2vsTE.incTips%>%
+  filter(robustStrains=="robust")
+
+#write.csv(strainR2vsTE.incTips,paste0(PATHanalNov2023,"Downstream/Results/StrainsDAcompare.csv"))
+
+robustMGS<-(strainR2vsTE.incTips%>%filter(robustStrains=="robust"))$MGS
+variableMGS<-(strainR2vsTE.incTips%>%filter(robustStrains=="variable"))$MGS
+
+strainR2vsTE.incTips%>%
+  ungroup()%>%
+  count(robustStrains,robustDA)
+
+strainR2vsTE.incTips%>%
+  ungroup()%>%
+  count(significance)
+```
+
+
+### compare robustly clustering strains IBD / IBD2
+
+```{r}
+names(x)<-c("IBD/control       ","       CD/UC/control")
+venn.p1<-ggVennDiagram(x, label_alpha = 0, edge_size =0.5,set_size = 4,label_size=4)+
+  scale_fill_gradient(low="white",high = "salmon")+
+  ggtitle("Robust")+
+  theme(legend.position = "none")+ 
+  #scale_x_continuous(expand = expansion(mult = .4))+
+  coord_flip()
+```
+
+### compare variable clustering strains IBD / IBD2
+
+```{r}
+names(y)<-c("IBD/control       ","       CD/UC/control")
+venn.p2<-ggVennDiagram(y, label_alpha = 0, edge_size =0.5,set_size = 4,label_size=4)+
+  scale_fill_gradient(low="white",high = "salmon")+
+  ggtitle("Variable (longitudinal resampling)")+
+  theme(legend.position = "none")+ 
+  #scale_x_continuous(expand = expansion(mult = .4))+
+  coord_flip()
+```
+
+# Make plots
+
+## Plot correlation mean DA effect size vs strain mean R2 (MGS significant in each)
+```{r}
+strainR2vsDA.lm$anysigLog2$call
+strainR2vsDA.lm$anysigLog2$coefficients
+p.val.strainR2vsDA.lm<-strainR2vsDA.lm$anysigLog2$coefficients["abs(meanTE.random)","Pr(>|t|)"]
+
+strainR2vsTE.incTips<-strainR2vsTE.incTips%>%
+  mutate("Significant in"=gsub("sig","",significance))%>%
+  mutate("Significant in"=gsub("DA","species DA",`Significant in`))
+
+strainR2vsTE.p1<-ggplot(strainR2vsTE.incTips) +
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),xmin=log2(meanR2-stdevR2), xmax=log2(meanR2+stdevR2)), width=.1, color='grey')+
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),ymin=abs(meanTE.random)-stdevTE.random, ymax=abs(meanTE.random)+stdevTE.random), width=.1, color='grey')+
+    geom_smooth(aes(x=log2(meanR2),y=abs(meanTE.random)),method='lm', color="black", linewidth=0.5, alpha=0.2) +
+    geom_point(aes(x=log2(meanR2),y=abs(meanTE.random),color=`Significant in`), alpha=0.7, size=2) +
+    #stat_cor(aes(x=log2(meanR2),y=abs(meanTE.random)),label.x = -10, label.y = 1,size=3) +
+    geom_text(aes(x=-5,y=-1,label=paste("p=",round(p.val.strainR2vsDA.lm,3),"*","\nafter accounting for number of tips")), size=4) +
+    theme_bw() +
+    ggtitle("DA effect sizes VS R2 of permanova")+
+    ylab("DA effect size") +
+    xlab("log2(mean R2 of strain clustering IBD vs. healthy)") +
+    theme(title = element_text(size=14),
+          axis.text = element_text(size=14),
+          axis.title = element_text(size=14),
+        #legend.position = "top",
+        legend.title = element_text(size = 12), 
+        legend.text = element_text(size = 12),
+        legend.key = element_rect(fill = "white", colour = NA),
+        legend.key.size = unit(0.1, "cm"),
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.position=c(.88,.9),
+        legend.box.background = element_rect(colour = "black"),)+
+  scale_color_brewer(palette="Set2")
+strainR2vsTE.p1
+
+```
+
+## Plot correlation mean DA effect size vs strain mean R2 (MGS significant in both only)
+```{r}
+p.val.bothsig.strainR2vsDA.lm<-strainR2vsDA.lm$bothsigLog2$coefficients["abs(meanTE.random)","Pr(>|t|)"]
+
+strainR2vsTE.p2<-ggplot(strainR2vsTE.incTips%>%filter(significance=="both sig")) +
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),xmin=log2(meanR2-stdevR2), xmax=log2(meanR2+stdevR2)), width=.1, color='grey')+
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),ymin=abs(meanTE.random)-stdevTE.random, ymax=abs(meanTE.random)+stdevTE.random), width=.1, color='grey')+
+    geom_smooth(aes(x=log2(meanR2),y=abs(meanTE.random)),method='lm', color="black", size=0.5, alpha=0.2) +
+    geom_point(aes(x=log2(meanR2),y=abs(meanTE.random)), alpha=0.7) +
+    #stat_cor(aes(x=log2(meanR2),y=abs(meanTE.random)),label.x = -10, label.y = 1,size=3) +
+    geom_text(aes(x=-8,y=1.5,label=paste("p-value:",round(p.val.bothsig.strainR2vsDA.lm,3),"*","\nafter accounting for number of tips")), size=3) +
+    theme_bw() +
+    ggtitle("DA effect sizes VS R2 of permanova (MGS sig in both) ")+
+    ylab("DA effect size") +
+    xlab("log2(mean R2 of strain clustering IBD vs. healthy)") +
+    theme(title = element_text(size=10),
+        #legend.position = "top",
+        legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white", colour = NA),
+        legend.key.size = unit(0.1, "cm"),
+        legend.spacing.y = unit(0.1, "cm"))
+strainR2vsTE.p2
+
+
+```
+
+## Make table comparing strains and DA
+
+```{r}
+strainR2vsTE.inclNonSig.counts<-strainR2vsTE.inclNonSig%>%
+  group_by(robustness)%>%
+  count()
+strainR2vsTE.inclNonSig.counts
+
+both_nonsig<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_non-sig DA_non-sig"))$n
+STRns_DArob<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_non-sig DA_robust"))$n
+STRns_DAvar<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_non-sig DA_variable"))$n
+STRrob_DAns<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_robust DA_non-sig"))$n
+bothrob<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_robust DA_robust"))$n
+STRrob_DAvar<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_robust DA_variable"))$n
+STRvar_DAns<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_variable DA_non-sig"))$n
+STRvar_DArob<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_variable DA_robust"))$n
+STRvar_DAvar<-(strainR2vsTE.inclNonSig.counts%>%filter(robustness=="strains_variable DA_variable"))$n
+
+
+confmat<-tibble("# MGS"=c("robust strains","variable strains","non-sig. strains"),"robust DA"=c(bothrob,STRvar_DArob,STRns_DArob),"variable DA"=c(STRrob_DAvar,STRvar_DAvar,STRns_DAvar),"non-sig. DA"=c(STRrob_DAns,STRvar_DAns,both_nonsig))
+
+confmat.obj<-formattable(confmat,
+            list(`#` = formatter("span", style = ~ style(font.weight = "bold"))))
+confmat.obj
+class(confmat.obj)
+confmat.obj.tab<-tableGrob(confmat.obj,rows=c("","",""))
+
+confmat.obj.tab2<-ggtexttable(confmat.obj, rows = NULL, theme = ttheme("light", base_size=13, ))
+confmat.obj.tab2
+```
+
+## Make table comparing strains (CD/) and DA
+
+
+```{r}
+strainR2vsTE.inclNonSig.ibd_ibd2<-readRDS(paste0(PATHanalNov2023,"Downstream/Results/overview.MGS.DA_q0.1_strains_cor_genes_PosNegSeparate.rds"))
+strainR2vsTE.inclNonSig.ibd_ibd2.counts<-strainR2vsTE.inclNonSig.ibd_ibd2%>%
+  mutate(robustness=paste0("strains_",robustStrains_CDUCCTRL," DA_",robustDA))%>%
+  group_by(robustness)%>%
+  count()
+strainR2vsTE.inclNonSig.ibd_ibd2.counts
+
+both_nonsig_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_non-sig DA_non-sig"))$n
+STRns_DArob_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_non-sig DA_robust"))$n
+STRns_DAvar_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_non-sig DA_variable"))$n
+STRrob_DAns_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_robust DA_non-sig"))$n
+bothrob_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_robust DA_robust"))$n
+STRrob_DAvar_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_robust DA_variable"))$n
+STRvar_DAns_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_variable DA_non-sig"))$n
+STRvar_DArob_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_variable DA_robust"))$n
+STRvar_DAvar_ibd2<-(strainR2vsTE.inclNonSig.ibd_ibd2.counts%>%filter(robustness=="strains_variable DA_variable"))$n
+
+
+confmat_ibd2<-tibble("# MGS"=c("robust strains","variable strains","non-sig. strains"),"robust DA"=c(bothrob_ibd2,STRvar_DArob_ibd2,STRns_DArob_ibd2),"variable DA"=c(STRrob_DAvar_ibd2,STRvar_DAvar_ibd2,STRns_DAvar_ibd2),"non-sig. DA"=c(STRrob_DAns_ibd2,STRvar_DAns_ibd2,both_nonsig_ibd2))
+
+confmat.obj_ibd2<-formattable(confmat_ibd2,
+            list(`#` = formatter("span", style = ~ style(font.weight = "bold"))))
+confmat.obj_ibd2
+class(confmat.obj_ibd2)
+confmat.obj_ibd2.tab<-tableGrob(confmat.obj_ibd2,rows=c("","",""))
+
+confmat.obj_ibd2.tab2<-ggtexttable(confmat.obj_ibd2, rows = NULL, theme = ttheme("light", base_size=13, ))
+confmat.obj_ibd2.tab2
+```
+
+
+```{r}
+strainvsall.subset<-strainR2vsTE.inclNonSig.ibd_ibd2%>%
+  filter(robustStrains_IBD!="non-sig" | robustStrains_CDUCCTRL!="non-sig")
+
+strainvsall.subset.mod<-strainvsall.subset%>%
+  mutate(meanR2_IBD=ifelse(robustStrains_IBD=="non-sig",NA,meanR2_IBD))%>% 
+  mutate(stdevR2_IBD=ifelse(robustStrains_IBD=="non-sig",NA,stdevR2_IBD))%>%
+  mutate(meanR2_CDUCCTRL=ifelse(robustStrains_CDUCCTRL=="non-sig",NA,meanR2_CDUCCTRL))%>%
+  mutate(stdevR2_CDUCCTRL=ifelse(robustStrains_CDUCCTRL=="non-sig",NA,stdevR2_CDUCCTRL))%>%
+  mutate(n_sig_DA=ifelse(enrichedIn=="IBD",n_sig_DA*-1,n_sig_DA))%>%
+  mutate(n_sig_DA.cdhc=ifelse(enrichedIn.cdhc=="CD",n_sig_DA.cdhc*-1,n_sig_DA.cdhc))%>%
+  mutate(n_sig_DA.uchc=ifelse(enrichedIn.uchc=="UC",n_sig_DA.uchc*-1,n_sig_DA.uchc))%>%
+  mutate(n_obs=ifelse(humanReadCorrelation=="negative",n_obs*-1,n_obs))%>%
+  mutate(n_chrt=ifelse(humanReadCorrelation=="negative",n_chrt*-1,n_chrt))%>%
+  mutate(MGS=gsub("$",")",gsub(".*;","",gsub(";MGS"," (MGS",bins))))
+
+
+strainvsall.subset.mod$DAfig <-strainvsall.subset.mod$MGS %in%DAmeans.topMGS.tax$SpeciesMGS
+strainvsall.subset.mod<-strainvsall.subset.mod%>%
+  mutate(highlight=ifelse(DAfig==TRUE, "bold","plain"))
+strainvsall.subset.mod2<-strainvsall.subset.mod%>%
+  select(-c(humanReadCorrelation,n_chrt,n_obs))%>%
+  distinct(.keep_all=TRUE)
+
+strainvsall.subset.mod_gat<-strainvsall.subset.mod%>%
+  gather(comparison, robustStrains, c(robustStrains_IBD,robustStrains_CDUCCTRL))%>%
+  filter(robustStrains!="nonsig")%>%
+  gather(group,meanR2,c(meanR2_IBD, meanR2_CDUCCTRL))
+
+p1_R2strains<-ggplot(strainvsall.subset.mod)+
+  geom_point(aes(x=meanR2_IBD,y=reorder(MGS,meanR2_IBD), color=robustStrains_IBD, shape="IBD-ctrl"),size=4)+ #shape=19,
+  geom_errorbar(aes(x=meanR2_IBD,y=reorder(MGS,meanR2_IBD),xmin=meanR2_IBD-stdevR2_IBD, xmax=meanR2_IBD+stdevR2_IBD), width=.1, color='grey')+
+  geom_point(aes(x=meanR2_CDUCCTRL,y=reorder(MGS,meanR2_IBD), color=robustStrains_CDUCCTRL, shape="CD-UC-ctrl"), size=4)+ #shape=1,
+  geom_errorbar(aes(x=meanR2_CDUCCTRL,y=reorder(MGS,meanR2_IBD),xmin=meanR2_CDUCCTRL-stdevR2_CDUCCTRL, xmax=meanR2_CDUCCTRL+stdevR2_CDUCCTRL), width=.1, color='grey')+
+  theme_bw()+
+  theme(legend.position="bottom",
+        legend.title=element_blank(),
+        legend.text = element_text(size=14),
+        legend.direction = "vertical",
+        title = element_text(size=14),
+        axis.ticks.y = element_blank())+
+  theme(
+    axis.text.y = element_text(size=14, face = (strainvsall.subset.mod2[order(strainvsall.subset.mod2$meanR2_IBD),])$highlight),
+        #axis.text.y = element_text(size=14, face = highlight),
+        axis.text.x = element_text(size=14),
+        axis.title = element_text(size=14),
+        legend.margin = margin(0,0,0,0, unit="cm"))+
+  scale_color_manual(values=c("royalblue","lightblue","red"),breaks=c("robust", "variable"))+
+  scale_shape_manual(values=c("IBD-ctrl" = 19, "CD-UC-ctrl" = 1))+
+  theme(legend.box="vertical")+
+  ylab("All species with significant strain signal\n\n")
+      
+p2_nsigstrains<-ggplot(strainvsall.subset.mod%>%
+                         gather(set,n_sig,c(n_sig_IBD,n_sig_CDUCCTRL))%>%
+                         mutate(set=ifelse(set=="n_sig_IBD","IBD-ctrl","CD-UC-ctrl")))+
+  geom_bar(aes(x=n_sig,y=reorder(MGS,meanR2_IBD), fill=set), stat="identity",position=position_dodge())+
+  theme_bw()+
+  theme(legend.position="bottom",
+        axis.text.y=element_blank(),
+        axis.title.y=element_blank(),
+        legend.title=element_blank(),
+        legend.text = element_text(size=14),
+        legend.direction = "vertical",
+        title = element_text(size=12),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(size=14))+
+  scale_fill_manual(values = c("skyblue","gold2"), na.value = "white")+
+  xlab("# sig. runs")
+
+
+p3_meanTE_DA<-ggplot(strainvsall.subset.mod%>%
+    mutate(meanTE.cdhc=ifelse(robustDA.cdhc=="non-sig",NA,meanTE.cdhc))%>%
+    mutate(meanTE.uchc=ifelse(robustDA.uchc=="non-sig",NA,meanTE.uchc))%>%
+    #mutate(meanTE.cduc=ifelse(robustDA.cduc=="non-sig",NA,meanTE.cduc))%>%
+    gather(comparison,meanTE,c(meanTE.cdhc,meanTE.uchc))%>%
+    mutate(comparison=gsub("meanTE.cdhc","CD",comparison))%>%
+    mutate(comparison=gsub("meanTE.uchc","UC",comparison)))+
+  geom_point(aes(x=meanTE,y=reorder(MGS,meanR2_IBD), color=comparison),size=3, alpha=0.7)+ #shape=19,
+  geom_vline(xintercept = 0, linetype=2, color="grey60")+
+  theme_bw()+
+  theme(legend.position="bottom",
+        axis.text.y=element_blank(),
+        axis.title.y=element_blank(),
+        legend.title=element_blank(),
+        legend.text = element_text(size=14),
+        legend.direction = "vertical",
+        title = element_text(size=12),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(size=14))+
+  scale_color_manual(values=col_IBD2)+
+  #scale_shape_manual(values=c("IBD-ctrl" = 19, "CD-UC-ctrl" = 1))+
+  theme(legend.box="vertical")#+
+  #ylab("mean TE")
+
+
+corMGS_rho<-read.csv(paste0(PATHanalNov2023,"Downstream/Results/MGScorvsDAibd.q0.1.crosslong.csv"))%>%
+  filter(measure=="rho")%>%
+  mutate(MGS=gsub("$",")",gsub(".*;","",gsub(";MGS"," (MGS",MGS))))
+corMGS_rho<-corMGS_rho%>%
+  group_by(MGS)%>%
+  summarize(meanRho=mean(rho2))%>%
+  left_join(corMGS_rho, by="MGS")%>%
+  distinct(MGS, comparison,.keep_all = TRUE)
+
+p4_corrHR<-ggplot(strainvsall.subset.mod%>%
+    left_join(corMGS_rho,by="MGS"))+
+  geom_point(aes(x=meanRho,y=reorder(MGS,meanR2_IBD)),size=3, alpha=0.7)+ #shape=19,
+  geom_vline(xintercept = 0, linetype=2, color="grey60")+
+  theme_bw()+
+  theme(legend.position="bottom",
+        axis.text.y=element_blank(),
+        axis.title.y=element_blank(),
+        legend.title=element_blank(),
+        legend.text = element_text(size=14),
+        legend.direction = "vertical",
+        title = element_text(size=12),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(size=14))+
+  #scale_color_manual(values=col_IBD2)+
+  #scale_shape_manual(values=c("IBD-ctrl" = 19, "CD-UC-ctrl" = 1))+
+  theme(legend.box="vertical")+
+  xlab("mean rho")
+
+
+strainvsall.subset.mod_gatGeneDif<-strainvsall.subset.mod%>%gather(set,geneDif,c(geneDif.ibd,geneDif.cdhc,geneDif.uchc))%>%
+  mutate("log2(geneDif)"=log2(geneDif+1))%>%
+  mutate(set=gsub("geneDif.cdhc","CD",set))%>%
+  mutate(set=gsub("geneDif.uchc","UC",set))%>%
+  mutate(set=gsub("geneDif.ibd","IBD",set))
+p7_geneDif<-ggplot(strainvsall.subset.mod_gatGeneDif)+
+  geom_bar(aes(x=`log2(geneDif)`,y=reorder(MGS,meanR2_IBD), fill=set), stat="identity",position=position_dodge())+
+  theme_bw()+
+  theme(legend.position="bottom",
+        axis.text.y=element_blank(),
+        axis.title.y=element_blank(),
+        legend.title=element_blank(),
+        legend.text = element_text(size=14),
+        legend.direction = "vertical",
+        title = element_text(size=12),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(size=14))+
+  scale_fill_manual(values = col_IBD2, na.value = "white", breaks=c("IBD","CD","UC"))+
+  xlab("log2(\n# sig. genes)")
+
+```
+
+```{r}
+p_MGSoverview3<-plot_grid(p1_R2strains+theme(
+  axis.text.y = element_text(size=11),
+  axis.title.x = element_text(size=12),
+  axis.text.x = element_text(size=10),
+  legend.text = element_text(size=12),
+  legend.key.size = unit(0.1, "cm"),
+  legend.spacing.y = unit(0.1, "cm")),
+  p2_nsigstrains+ggtitle("Strain signal")+theme(
+    title = element_text(size=10),
+    axis.title.x = element_text(size=12),
+    axis.text.x = element_text(size=10),
+    legend.text = element_text(size=12),
+    legend.key.size = unit(0.4, "cm"),
+    legend.spacing.y = unit(0.1, "cm")),
+  p3_meanTE_DA+ggtitle("DA species \nctrl<->disease")+theme(
+    title = element_text(size=10),
+    axis.title.x = element_text(size=12),
+    axis.text.x = element_text(size=10),
+    legend.text = element_text(size=12),
+    legend.key.size = unit(0.4, "cm"),
+    legend.spacing.y = unit(0.1, "cm"))+
+    scale_x_reverse(),
+  p4_corrHR+ggtitle("Species correl.\ninflammation idx")+theme(
+    title = element_text(size=10),
+    axis.title.x = element_text(size=12),
+    axis.text.x = element_text(size=10),
+    legend.text = element_text(size=12),
+    legend.key.size = unit(0.4, "cm"),
+    legend.spacing.y = unit(0.1, "cm")),
+                         nrow=1,align ="h", rel_widths=c(3.5,1,1,1))
+p_MGSoverview3
+```
+
+```{r fig.width=18, fig.height=10}
+figA<-plot_grid(plot_grid(NA,venn.p1,venn.p2, NA, align="h",axis = "tb", nrow=1,rel_widths=c(0.5,2,2,0.5)),
+                plot_grid(confmat.obj.tab2,confmat.obj_ibd2.tab2, nrow=1),
+                nrow=2, rel_heights = c(1.5,1),labels = c('A', 'B'))
+figA
+
+figB<-plot_grid(figA, strainR2vsTE.p2, nrow=2, rel_heights = c(2,3),labels = c('', 'C'))
+figB2<-plot_grid(figA, strainR2vsTE.p1, nrow=2, rel_heights = c(2,3),labels = c('', 'C'))
+figB2
+
+
+figAll4<-plot_grid(figB2,p_MGSoverview3, rel_widths = c(3,4), labels = c('', 'D'))
+figAll4
+
+pdf(paste0(PATH,"Figure_StrainsD_q0.1.pdf"), height=10, width=18)
+  figAll4
+dev.off()
+
+ggsave(paste0(PATH, "Figure_StrainsD_q0.1.png"), figAll4,height=10, width=19)
+
+```
+
+```{r}
+strainvsall.subset.mod%>%
+  ungroup()%>%
+  count(robustDA.cdhc,enrichedIn.cdhc)
+```
+
+```{r}
+strainvsall.subset.mod%>%
+  ungroup()%>%
+  count(robustDA.uchc,enrichedIn.uchc)
+```
+
+```{r}
+strainvsall.subset.mod%>%
+  ungroup()%>%
+  count(robustDA,enrichedIn)
+```
+
+```{r}
+strainvsall.subset.mod%>%
+  ungroup()%>%
+  count(robustDA,robustDA.cdhc,robustDA.uchc)
+
+#count(enrichedIn,enrichedIn.cdhc,enrichedIn.uchc)
+```
+
+

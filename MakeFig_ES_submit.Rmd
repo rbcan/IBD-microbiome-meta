@@ -1,0 +1,530 @@
+---
+title: "Make Figure for Beta-diversity in IBD"
+author: "Rebecca Ansorge"
+date: "21/12/2023"
+output: html_document
+---
+
+### Load libraries
+
+```{r}
+library(tidyverse)
+library(ggExtra)
+library(patchwork)
+library(cowplot)
+library(formattable)
+library(gridExtra)
+library(rstatix)
+library(ggpubr)
+library(biomeStats)
+library(RColorBrewer)
+library(lmerTest)
+```
+### Import data
+
+```{r}
+#PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#PATHanalNov2023<-"~/Library/CloudStorage/OneDrive-Personal/analysisNov2023/"
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+PATH<-"~/Documents/Rebecca/onedrive/submission/natcom/revision/checks/"
+
+```
+
+```{r}
+es.ab<-read.table(paste0(PATHanalNov2023,"ES/h_scaled.tsv"), header=TRUE, check.names=FALSE, sep=",")
+es.fit<-read.table(paste0(PATHanalNov2023,"ES/model_fit.tsv"), header=TRUE, check.names=FALSE, sep=",")
+
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+meta<-meta[which(meta$IBD2!="IBDU"),]
+
+phyla.ab<-read.table(paste0(PATHanalNov2023,"IBD8Bin5SB/Abundance/MGS.matL1.txt"), header=TRUE, check.names=FALSE, sep="\t")
+```
+
+```{r}
+dim(es.ab)
+head(es.ab)
+rownames(es.ab)<-es.ab[,1]
+es.ab.df<-t(es.ab[,-1])%>%
+  as.data.frame()%>%
+  rownames_to_column("SmplID")
+
+colnames(es.fit)<-c("SmplID","ESfit")
+
+es.ab.df<-es.ab.df%>%
+  left_join(es.fit, by="SmplID")
+
+sapply(es.ab.df, class)
+
+es.ab.meta<-es.ab.df%>%
+  right_join(meta,by="SmplID")
+
+es.ab.meta<-es.ab.meta%>%
+  mutate(IBD=as.character(IBD))%>%
+  mutate(IBD2=as.character(IBD2))%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+  mutate(Cohort_precise=gsub("Fang_UCSD_","",Cohort_precise))
+
+head(es.ab.meta)
+es.ab.meta$IBD2%>%unique()
+es.ab.meta$IBD%>%unique()
+
+```
+
+```{r}
+humanReads<-read.delim2(paste0(PATHanalNov2023,"humanReads/IBD2022.4.map"), comment.char = "#", header=FALSE)%>%
+  select(1,36)
+colnames(humanReads)<-c("SmplID","HumanRds")
+head(humanReads)
+
+es.ab.meta_hr<-inner_join(es.ab.meta,humanReads,by="SmplID")#%>%
+  #filter(!is.na(HumanRds))
+es.ab.meta_hr$HumanRds<-as.numeric(es.ab.meta_hr$HumanRds)
+```
+
+```{r}
+# define color palette
+
+col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4","#1F78B4", "grey40","#E8A400")
+names(col_IBD2)<-c("IBD","CD","UC","healthy","control", "Healthy","variable","disease")
+
+col_ES<-brewer.pal(n=5, name="Set3")
+
+col_ESfit<-brewer.pal(n=5, name="RdYlBu")
+names(col_ESfit)<-c("fit < 0.2","0.2 < fit 0.4", "0.4 < fit 0.6","0.6 < fit 0.8", "fit > 0.8")
+
+#display.brewer.pal(n=12, name="Paired")
+#brewer.pal(n=12, name="Paired")
+```
+
+
+```{r fig.height=4, fig.width=9}
+es.ab.meta_gat<-es.ab.meta%>%
+  gather(ES,ES_abundance,c(ES_Bact,ES_Bifi, ES_Esch, ES_Prev,ES_Firm))
+dim(es.ab.meta_gat)
+
+# fist timepoint
+es.ab.meta_gat1tp<-es.ab.meta%>%
+  arrange(days_after_first_visit)%>%
+  distinct(IndividualID, .keep_all = TRUE)%>%
+  gather(ES,ES_abundance,c(ES_Bact,ES_Bifi, ES_Esch, ES_Prev,ES_Firm))
+dim(es.ab.meta_gat1tp)
+
+es.ab.meta_gat$IBD2<-factor(es.ab.meta_gat$IBD2, levels=c("control","UC","CD"))
+
+
+p_escomp<-ggplot(es.ab.meta_gat, aes(x=Cohort_precise,y=ES_abundance))+
+  geom_bar(stat="identity",position="fill",aes(fill=ES))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=45,hjust=1))+
+  scale_fill_manual(values=col_ES)+
+  facet_grid(.~IBD2)+
+  ylab("ES abundance")
+
+p_escomp_1tp<-ggplot(es.ab.meta_gat1tp, aes(x=Cohort_precise,y=ES_abundance))+
+  geom_bar(stat="identity",position="fill",aes(fill=ES))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=45,hjust=1))+
+  scale_fill_manual(values=col_ES)+
+  facet_grid(.~IBD2)
+
+p_escomp
+
+```
+
+```{r fig.height=4, fig.width=9}
+
+es.fit.meta<-es.ab.meta%>%
+  mutate(ESfit_cat=ifelse(ESfit<0.2,"fit < 0.2",ifelse(ESfit<0.4,"0.2 < fit 0.4",ifelse(ESfit<0.6,"0.4 < fit 0.6",ifelse(ESfit<0.8,"0.6 < fit 0.8","fit > 0.8")))))%>%
+  filter(!is.na(ESfit))
+es.fit.meta$IBD2<-factor(es.fit.meta$IBD2, levels=c("control","UC","CD"))
+
+p_esfit<-ggplot(es.fit.meta, aes(x=Cohort_precise))+
+  geom_bar(position="fill",aes(fill=factor(ESfit_cat, levels=rev(names(col_ESfit)))))+
+  theme_bw()+
+  scale_fill_manual(values=col_ESfit, breaks=rev(names(col_ESfit)), name = "ES fit")+
+  theme(axis.text.x=element_text(angle=45,hjust=1,))+
+  facet_grid(.~IBD2)+
+  ylab("ES fit count")+
+  xlab("cohort")
+
+p_esfit
+
+```
+
+```{r fig.width=9, fig.height=7}
+es_all<-plot_grid(p_escomp+theme(axis.text.x = element_blank(),axis.title.x=element_blank(), axis.ticks.x = element_blank()),p_esfit+theme(plot.margin = margin(1, 1, 1, 20)),ncol=1, align="v", axis="lr", rel_heights = c(1,1.3), labels=(c("A","B")))
+es_all
+```
+
+```{r}
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_ES.pdf"),height=7,width=9)
+es_all
+dev.off()
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_ES.png"),es_all,height=7,width=9)
+
+```
+
+
+```{r}
+es.ab.meta<-es.ab.meta%>%
+  filter(!is.na(ES_Bact))%>%
+  rowwise() %>%
+  mutate(domES = names(.)[1+which.max(c_across(2:6))])
+
+n_samples<-es.ab.meta$SmplID%>%unique()%>%length()
+es.ab.meta%>%
+  group_by(domES)%>%
+  count()%>%
+  mutate(dom_ES_percent=round(n/n_samples*100,1))
+```
+
+
+
+```{r}
+es.fit.meta$IBD2<-factor(es.fit.meta$IBD2)
+es.fit.meta$Cohort_precise<-factor(es.fit.meta$Cohort_precise)
+
+wt_es_ctr_cd<-coin::wilcox_test(ESfit ~ IBD2 | Cohort_precise, data=es.fit.meta%>%filter(IBD2%in%c("control","CD")))
+wt_es_ctr_uc<-coin::wilcox_test(ESfit ~ IBD2 | Cohort_precise, data=es.fit.meta%>%filter(IBD2%in%c("control","UC")))
+wt_es_uc_cd<-coin::wilcox_test(ESfit ~ IBD2 | Cohort_precise, data=es.fit.meta%>%filter(IBD2%in%c("UC","CD")))
+
+wt_es_ctr_cd
+
+wt_es_ctr_uc
+
+wt_es_uc_cd
+
+n_ctrlCD<-es.fit.meta%>%filter(IBD2%in%c("control","CD"))%>%nrow()
+n_ctrlUC<-es.fit.meta%>%filter(IBD2%in%c("control","UC"))%>%nrow()
+n_CDUC<-es.fit.meta%>%filter(IBD2%in%c("UC","CD"))%>%nrow()
+
+wt_esfit<-data.frame(
+  comparison=c("control-CD","control-UC","UC-CD"),
+  p=c(coin::pvalue(wt_es_ctr_cd),coin::pvalue(wt_es_ctr_uc),coin::pvalue(wt_es_uc_cd)),
+  effectSize=c(coin::statistic(wt_es_ctr_cd)/sqrt(n_ctrlCD),coin::statistic(wt_es_ctr_uc)/sqrt(n_ctrlUC),coin::statistic(wt_es_uc_cd)/sqrt(n_CDUC))
+)
+wt_esfit$padjust<-p.adjust(wt_esfit$p)
+wt_esfit<-wt_esfit%>%
+  mutate(group1=as.factor(c("control","control","UC")),
+         group2=as.factor(c("CD","UC","CD")),
+         y.position=c(1.2,1.1,1.3))%>%
+  add_significance()
+wt_esfit
+```
+
+```{r}
+# es fit test figure
+p_esfit_box<-ggplot(es.fit.meta, aes(x=IBD2, y=ESfit))+
+  geom_boxplot(aes(fill=IBD2))+
+  scale_fill_manual(values=col_IBD2, name="")+
+  stat_pvalue_manual(
+    wt_esfit
+  ) +
+  theme_bw()+
+  theme(axis.text.x=element_blank(),
+        axis.title.x=element_blank(),
+        axis.ticks.x=element_blank())
+  #facet_wrap(.~Cohort_precise)
+p_esfit_box
+
+```
+
+```{r}
+ggsave(paste0(PATH,"p_esfit_box.png"),p_esfit_box,width=4,height=4)
+```
+
+Per cohort
+
+```{r}
+test_cohorts<-(es.fit.meta%>%mutate(Cohort_precise=as.character(Cohort_precise)))$Cohort_precise%>%unique()
+l_wt_es<-lapply(test_cohorts, function(c){
+  df<-es.fit.meta%>%
+    ungroup()%>%
+    mutate(Cohort_precise=as.character(Cohort_precise))%>%
+    filter(Cohort_precise==c)
+  
+  cond<-(df%>%mutate(IBD2=as.character(IBD2)))$IBD2%>%unique()
+  if(all(c("CD","control")%in%cond)){
+    ctr_cd<-coin::wilcox_test(ESfit ~ IBD2, data=df%>%filter(IBD2%in%c("control","CD")))
+    n_ctrlCD<-df%>%filter(IBD2%in%c("control","CD"))%>%nrow()
+    z_ctr_cd<-coin::statistic(ctr_cd)
+    p_ctr_cd<-coin::pvalue(ctr_cd)
+  } else {
+    z_ctr_cd<-NA
+    p_ctr_cd<-NA
+  }
+
+  if(all(c("UC","control")%in%cond)){
+    ctr_uc<-coin::wilcox_test(ESfit ~ IBD2, data=df%>%filter(IBD2%in%c("control","UC")))
+    n_ctrlUC<-df%>%filter(IBD2%in%c("control","UC"))%>%nrow()
+    z_ctr_uc<-coin::statistic(ctr_uc)
+    p_ctr_uc<-coin::pvalue(ctr_uc)
+  } else {
+    z_ctr_uc<-NA
+    p_ctr_uc<-NA
+  }
+
+  
+  if(all(c("CD","UC")%in%cond)){
+    uc_cd<-coin::wilcox_test(ESfit ~ IBD2, data=df%>%filter(IBD2%in%c("UC","CD")))
+    n_CDUC<-df%>%filter(IBD2%in%c("UC","CD"))%>%nrow()
+    z_uc_cd<-coin::statistic(uc_cd)
+    p_uc_cd<-coin::pvalue(uc_cd)
+  } else {
+    z_uc_cd<-NA
+    p_uc_cd<-NA
+  }
+
+  
+  wt_esfit<-data.frame(
+    Cohort_precise=c(c,c,c),
+    comparison=c("control-CD","control-UC","UC-CD"),
+    p=c(p_ctr_cd,p_ctr_uc,p_uc_cd),
+    effectSize=c(z_ctr_cd/sqrt(n_ctrlCD),z_ctr_uc/sqrt(n_ctrlUC),z_uc_cd/sqrt(n_CDUC))
+  )
+  wt_esfit$padjust<-p.adjust(wt_esfit$p)
+  wt_esfit<-wt_esfit%>%
+    mutate(group1=as.factor(c("control","control","UC")),
+           group2=as.factor(c("CD","UC","CD")),
+           y.position=c(1.2,1.1,1.3))%>%
+    add_significance()
+  return(wt_esfit)
+})
+#l_wt_es
+
+df_wt_es<-do.call(rbind,l_wt_es)%>%
+  filter(!is.na(p))
+df_wt_es
+```
+
+```{r}
+# es fit test figure
+p_esfit_vio<-ggplot(es.fit.meta, aes(x=IBD2, y=ESfit))+
+  geom_violin(aes(fill=IBD2))+
+  geom_boxplot(width=0.2)+
+  scale_fill_manual(values=col_IBD2, name="")+
+  stat_pvalue_manual(
+    df_wt_es,
+    size=2
+  ) +
+  theme_bw()+
+  ylab("EF fit")+
+  theme(axis.text.x=element_blank(),
+        axis.title.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  facet_wrap(.~Cohort_precise, ncol=5)
+
+p_esfit_vio
+
+```
+
+```{r}
+ggsave(paste0(PATH,"p_esfit_vio.png"),p_esfit_vio,width=8,height=6)
+```
+
+
+
+```{r}
+unique(phyla.ab$L1)
+
+phyla.ab<-phyla.ab%>%
+  column_to_rownames("L1")
+  
+phyla.tss<-as.data.frame(prop.table(as.matrix(phyla.ab), 2))
+
+phyla.tss$Phylum<-gsub(".*;","",rownames(phyla.tss))
+```
+
+```{r fig.width=6, fig.height=4}
+phyla.txx_gat<-phyla.tss%>%
+  gather(SmplID,phylum_abundance,-Phylum)%>%
+  inner_join(meta,by="SmplID")%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+  filter(!is.na(phylum_abundance))
+
+phyla_summary<-phyla.txx_gat%>%
+  group_by(Phylum)%>%
+  summarize(mean=mean(phylum_abundance))%>%
+  arrange(mean)
+
+phyla.txx_gat$Phylum<-factor(phyla.txx_gat$Phylum, levels=rev(phyla_summary$Phylum))
+
+p_phylaAb<-ggplot(phyla.txx_gat, aes(x=Phylum,y=phylum_abundance))+
+  geom_boxplot(aes(fill=IBD2), outlier.size = 0.1)+
+  theme_bw()+
+  scale_fill_manual(values=col_IBD2, breaks=rev(names(col_IBD2)), name = "")+
+  theme(axis.text.x=element_text(angle=45,hjust=1,size=6),axis.text=element_text(size=6))+
+  ylab("Relative phylum abundance per sample")
+p_phylaAb
+```
+
+```{r}
+pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_phylaAb.pdf"),height=4,width=6)
+p_phylaAb
+dev.off()
+
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_phylaAb.png"),p_phylaAb,height=4,width=6)
+
+```
+
+```{r}
+#Correlate ES fit scores with human reads
+#all
+fit.vec<-es.ab.meta_hr$ESfit
+hr.vec<-es.ab.meta_hr$HumanRds
+cohort.vec<-as.factor(es.ab.meta_hr$Cohort_precise)
+lmm_fit_hr<-lmerTest::lmer(log2(fit.vec) ~ log2(hr.vec) +(1|cohort.vec))
+summary_lmm_fit_hr<-summary(lmm_fit_hr)
+summary_lmm_fit_hr
+
+#all with condition interaction
+fit.vec<-es.ab.meta_hr$ESfit
+ibd2.vec<-as.factor(es.ab.meta_hr$IBD2)
+hr.vec<-es.ab.meta_hr$HumanRds
+cohort.vec<-as.factor(es.ab.meta_hr$Cohort_precise)
+lmm_fit_hr.ibd2<-lmerTest::lmer(log2(fit.vec) ~ log2(hr.vec)*ibd2.vec +(1|cohort.vec))
+summary_lmm_fit_hr.ibd2<-summary(lmm_fit_hr.ibd2)
+summary_lmm_fit_hr.ibd2
+
+#cd
+fit.cd.vec<-(es.ab.meta_hr%>%filter(IBD2=="CD"))$ESfit
+hr.cd.vec<-(es.ab.meta_hr%>%filter(IBD2=="CD"))$HumanRds
+cohort.cd.vec<-as.factor((es.ab.meta_hr%>%filter(IBD2=="CD"))$Cohort_precise)
+lmm_fit_hr.cd<-lmerTest::lmer(log2(fit.cd.vec) ~ log2(hr.cd.vec) +(1|cohort.cd.vec))
+summary_lmm_fit_hr.cd<-summary(lmm_fit_hr.cd)
+summary_lmm_fit_hr.cd
+
+#uc
+fit.uc.vec<-(es.ab.meta_hr%>%filter(IBD2=="UC"))$ESfit
+hr.uc.vec<-(es.ab.meta_hr%>%filter(IBD2=="UC"))$HumanRds
+cohort.uc.vec<-as.factor((es.ab.meta_hr%>%filter(IBD2=="UC"))$Cohort_precise)
+lmm_fit_hr.uc<-lmerTest::lmer(log2(fit.uc.vec) ~ log2(hr.uc.vec) +(1|cohort.uc.vec))
+summary_lmm_fit_hr.uc<-summary(lmm_fit_hr.uc)
+summary_lmm_fit_hr.uc
+
+#control
+fit.control.vec<-(es.ab.meta_hr%>%filter(IBD2=="control"))$ESfit
+hr.control.vec<-(es.ab.meta_hr%>%filter(IBD2=="control"))$HumanRds
+cohort.control.vec<-as.factor((es.ab.meta_hr%>%filter(IBD2=="control"))$Cohort_precise)
+lmm_fit_hr.control<-lmerTest::lmer(log2(fit.control.vec) ~ log2(hr.control.vec) +(1|cohort.control.vec))
+summary_lmm_fit_hr.control<-summary(lmm_fit_hr.control)
+summary_lmm_fit_hr.control
+
+lmm_fit_hr.df<-data.frame(
+  condition=c("CD","UC","control"),
+  p=c(summary_lmm_fit_hr.cd$coefficients[2,5],summary_lmm_fit_hr.uc$coefficients[2,5],summary_lmm_fit_hr.control$coefficients[2,5]),
+  beta=c(summary_lmm_fit_hr.cd$coefficients[2,1],summary_lmm_fit_hr.uc$coefficients[2,1],summary_lmm_fit_hr.control$coefficients[2,1])
+)
+lmm_fit_hr.df$q<-p.adjust(lmm_fit_hr.df$p, method="BH")
+lmm_fit_hr.df
+```
+
+```{r}
+# using spearman correlations
+
+#cd
+spc_fit_hr.cd<-coin::spearman_test(fit.cd.vec ~ hr.cd.vec | cohort.cd.vec)
+spc_fit_hr.cd
+#uc
+spc_fit_hr.uc<-coin::spearman_test(fit.uc.vec ~ hr.uc.vec |cohort.uc.vec)
+spc_fit_hr.uc
+
+#control
+spc_fit_hr.control<-coin::spearman_test(fit.control.vec ~ hr.control.vec |cohort.control.vec)
+spc_fit_hr.control
+
+spc_fit_hr.df<-data.frame(
+  condition=c("CD","UC","control"),
+  p=c(coin::pvalue(spc_fit_hr.cd),coin::pvalue(spc_fit_hr.uc),coin::pvalue(spc_fit_hr.control)),
+  Z=c(coin::statistic(spc_fit_hr.cd),coin::statistic(spc_fit_hr.uc),coin::statistic(spc_fit_hr.control))
+)
+spc_fit_hr.df$q<-p.adjust(spc_fit_hr.df$p, method="BH")
+spc_fit_hr.df
+```
+
+```{r}
+#USING HUMAN READ RANKS
+
+# calculate human read ranks
+es.ab.meta_hr_ranks <- es.ab.meta_hr %>%
+  group_by(Cohort_precise) %>%
+  mutate(rankHumanRds = rank(HumanRds)) %>%
+  ungroup()
+
+
+#cd
+fit.cd.vec<-(es.ab.meta_hr_ranks%>%filter(IBD2=="CD"))$ESfit
+hr_ranks.cd.vec<-(es.ab.meta_hr_ranks%>%filter(IBD2=="CD"))$rankHumanRds
+cohort.cd.vec<-as.factor((es.ab.meta_hr_ranks%>%filter(IBD2=="CD"))$Cohort_precise)
+lmm_fit_hr_ranks.cd<-lmerTest::lmer(log2(fit.cd.vec) ~ hr_ranks.cd.vec +(1|cohort.cd.vec))
+summary_lmm_fit_hr_ranks.cd<-summary(lmm_fit_hr_ranks.cd)
+summary_lmm_fit_hr_ranks.cd
+
+#uc
+fit.uc.vec<-(es.ab.meta_hr_ranks%>%filter(IBD2=="UC"))$ESfit
+hr_ranks.uc.vec<-(es.ab.meta_hr_ranks%>%filter(IBD2=="UC"))$rankHumanRds
+cohort.uc.vec<-as.factor((es.ab.meta_hr_ranks%>%filter(IBD2=="UC"))$Cohort_precise)
+lmm_fit_hr_ranks.uc<-lmerTest::lmer(log2(fit.uc.vec) ~ hr_ranks.uc.vec +(1|cohort.uc.vec))
+summary_lmm_fit_hr_ranks.uc<-summary(lmm_fit_hr_ranks.uc)
+summary_lmm_fit_hr_ranks.uc
+
+#control
+fit.control.vec<-(es.ab.meta_hr_ranks%>%filter(IBD2=="control"))$ESfit
+hr_ranks.control.vec<-(es.ab.meta_hr_ranks%>%filter(IBD2=="control"))$rankHumanRds
+cohort.control.vec<-as.factor((es.ab.meta_hr_ranks%>%filter(IBD2=="control"))$Cohort_precise)
+lmm_fit_hr_ranks.control<-lmerTest::lmer(log2(fit.control.vec) ~ hr_ranks.control.vec +(1|cohort.control.vec))
+summary_lmm_fit_hr_ranks.control<-summary(lmm_fit_hr_ranks.control)
+summary_lmm_fit_hr_ranks.control
+
+lmm_fit_hr_ranks.df<-data.frame(
+  condition=c("CD","UC","control"),
+  p=c(summary_lmm_fit_hr_ranks.cd$coefficients[2,5],summary_lmm_fit_hr_ranks.uc$coefficients[2,5],summary_lmm_fit_hr_ranks.control$coefficients[2,5]),
+  beta=c(summary_lmm_fit_hr_ranks.cd$coefficients[2,1],summary_lmm_fit_hr_ranks.uc$coefficients[2,1],summary_lmm_fit_hr_ranks.control$coefficients[2,1])
+)
+lmm_fit_hr_ranks.df$q<-p.adjust(lmm_fit_hr_ranks.df$p, method="BH")
+lmm_fit_hr_ranks.df
+```
+
+
+```{r}
+p_hr_esfit<-ggplot(es.ab.meta_hr, aes(x=log2(HumanRds),y=log2(ESfit)))+
+  geom_point(aes(color=IBD2), alpha=0.4)+
+  geom_smooth(aes(color=IBD2), method="lm", se=FALSE)+
+  scale_color_manual(values=col_IBD2, name="")+
+  theme_bw()
+p_hr_esfit
+```
+```{r}
+ggsave(paste0(PATH,"p_hr_esfit.png"),p_hr_esfit,width=6,height=4)
+```
+
+
+```{r}
+legA<-get_legend(p_escomp)
+legB<-get_legend(p_esfit)
+legC<-get_legend(p_esfit_vio)
+
+
+es_all3<-plot_grid(p_escomp+theme(axis.text.x = element_blank(),axis.title.x=element_blank(), axis.ticks.x = element_blank(), legend.position = "none"),
+                   p_esfit+theme(plot.margin = margin(1, 1, 1, 20), legend.position = "none"),
+                   p_esfit_vio+theme(legend.position = "none"),
+                   ncol=1, align="v", axis="lr", rel_heights = c(1,1.3,1.2), labels=(c("A","B","C")))
+
+legABC<-plot_grid(legA,legB,legC,
+         ncol=1, align="v", axis="lr", rel_heights = c(1,1.3,1.2))
+
+es_all3<-plot_grid(es_all3,legABC,nrow=1,rel_widths = c(5,1))
+es_all3
+```
+
+```{r}
+pdf(paste0(PATH,"suppl_ES.pdf"),height=10,width=9)
+es_all3
+dev.off()
+
+ggsave(paste0(PATH,"suppl_ES.png"),es_all3,height=10,width=9)
+
+```

@@ -643,9 +643,18 @@ ctrlDist.vec<-CTRLdistances.crossLongS1_hrRanks$distances_ccentrCTRL
 hr.vec<-CTRLdistances.crossLongS1_hrRanks$HumanRds
 cohort.vec<-as.factor(CTRLdistances.crossLongS1_hrRanks$Cohort_precise)
 
-lmm_ctrlDitst_HRlog2<-lmerTest::lmer(ctrlDist.vec ~ log2(hr.vec) +(1|cohort.vec))
+lmm_ctrlDitst_HRlog2<-lmerTest::lmer(log2(ctrlDist.vec) ~ log2(hr.vec) +(1|cohort.vec))
 summary_lmm_ctrlDitst_HRlog2<-summary(lmm_ctrlDitst_HRlog2)
 summary_lmm_ctrlDitst_HRlog2
+```
+
+```{r}
+# test with linear model random effect cohort
+hr.ranks.vec<-CTRLdistances.crossLongS1_hrRanks$rankHumanRds
+
+lmm_ctrlDitst_HRlog2_ranks<-lmerTest::lmer(ctrlDist.vec ~ hr.ranks.vec +(1|cohort.vec))
+summary_lmm_ctrlDitst_HRlog2_ranks<-summary(lmm_ctrlDitst_HRlog2_ranks)
+summary_lmm_ctrlDitst_HRlog2_ranks
 ```
 
 #Save workspace

@@ -1,0 +1,110 @@
+---
+title: "Make Figure for Beta-diversity in IBD"
+author: "Rebecca Ansorge"
+date: "21/12/2023"
+output: html_document
+---
+
+### Load libraries
+
+```{r}
+library(tidyverse)
+library(ggExtra)
+library(patchwork)
+library(cowplot)
+library(formattable)
+library(gridExtra)
+library(rstatix)
+library(ggpubr)
+library(biomeStats)
+library(RColorBrewer)
+library(lmerTest)
+```
+### Import data
+
+```{r}
+#PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#PATHanalNov2023<-"~/Library/CloudStorage/OneDrive-Personal/analysisNov2023/"
+PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+PATH<-"~/Documents/Rebecca/onedrive/submission/natcom/revision/checks/"
+
+```
+
+```{r}
+meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+meta<-meta[which(meta$IBD2!="IBDU"),]
+
+phyla.ab<-read.table(paste0(PATHanalNov2023,"IBD8Bin5SB/Abundance/MGS.matL1.txt"), header=TRUE, check.names=FALSE, sep="\t")
+phyla.cor<-read.table(paste0(PATH,"phylum_hr_correlation.txt"), header=TRUE, check.names=FALSE, sep="\t")
+```
+
+
+```{r}
+humanReads<-read.delim2(paste0(PATHanalNov2023,"humanReads/IBD2022.4.map"), comment.char = "#", header=FALSE)%>%
+  select(1,36)
+colnames(humanReads)<-c("SmplID","HumanRds")
+head(humanReads)
+
+meta_hr<-inner_join(meta,humanReads,by="SmplID")#%>%
+  #filter(!is.na(HumanRds))
+meta_hr$HumanRds<-as.numeric(meta_hr$HumanRds)
+```
+
+```{r}
+# define color palette
+
+col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4","#1F78B4", "grey40","#E8A400")
+names(col_IBD2)<-c("IBD","CD","UC","healthy","control", "Healthy","variable","disease")
+```
+
+
+```{r}
+unique(phyla.ab$L1)
+
+phyla.ab<-phyla.ab%>%
+  column_to_rownames("L1")
+  
+phyla.tss<-as.data.frame(prop.table(as.matrix(phyla.ab), 2))
+
+phyla.tss$Phylum<-gsub(".*;","",rownames(phyla.tss))
+```
+
+```{r fig.width=6, fig.height=4}
+phyla.txx_gat<-phyla.tss%>%
+  gather(SmplID,phylum_abundance,-Phylum)%>%
+  inner_join(meta_hr,by="SmplID")%>%
+  mutate(IBD=ifelse(IBD=="healthy","control",IBD))%>%
+  mutate(IBD2=ifelse(IBD2=="healthy","control",IBD2))%>%
+  filter(!is.na(phylum_abundance))
+
+phyla.txx_gat<-phyla.txx_gat%>%
+  left_join(phyla.cor, by="Phylum")%>%
+  mutate(sig=ifelse(`q-value`<=0.001,"***",ifelse(`q-value`<=0.01,"**",ifelse(`q-value`<=0.05,"*",ifelse(`q-value`<=0.1,".","ns")))))%>%
+  mutate(Phylum2=paste0(Phylum," ",sig,"\nq=",round(`q-value`,3)," β=",round(β,3)))%>%
+  mutate(cohort=Cohort_precise)
+```
+
+Plot phylum abundances against human read %
+
+```{r}
+p_phyAb_hr<-ggplot(phyla.txx_gat%>%
+         filter(Phylum!="?")%>%
+         filter(!is.na(`q-value`)), aes(x=log2(HumanRds), y=phylum_abundance))+
+  geom_point(alpha=0.5)+
+  geom_smooth(aes(color=cohort),method="lm",se=FALSE,size=0.5)+
+  theme_bw()+
+  xlab("log2(Inflammation index)")+
+  ylab("Phylum relative abundances")+
+  facet_wrap(.~Phylum2, scales="free")
+p_phyAb_hr
+```
+
+```{r}
+pdf(paste0(PATH,"suppl_phylaAb_hr.pdf"),height=5,width=10)
+p_phyAb_hr
+dev.off()
+
+ggsave(paste0(PATH,"suppl_phylaAb_hr.png"),p_phyAb_hr,height=5,width=10)
+
+```
+
