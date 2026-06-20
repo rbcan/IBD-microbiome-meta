@@ -809,27 +809,78 @@ sum(discrMGS%in%(df_cor_all_DAibd_all_sigs%>%filter(!is.na(effect))%>%filter(mea
 ```{r fig.width=8, fig.height=15}
 df_cor_all_DAibd_all_sigs<-df_cor_all_DAibd_all_sigs%>%
   mutate(effect=as.numeric(effect))
-p_cor_all_DAibd_all_sigs<-ggplot(df_cor_all_DAibd_all_sigs%>%
-   mutate(measure=ifelse(measure=="meanTE.IBDHC","meanTE IBD - control",measure))%>%
-   mutate(measure=ifelse(measure=="meanTE.CDHC","meanTE CD - control",measure))%>%
-   mutate(measure=ifelse(measure=="meanTE.UCHC","meanTE UC - control",measure))%>%
-   mutate(measure=ifelse(measure=="meanTE.CDUC","meanTE CD - UC",measure)),
-   aes(effect,reorder(gsub(".*;","",gsub(";MGS."," MGS.",MGS)),rho2),color=cohort,shape=robustDA))+
+
+df_cor_all_DAibd_all_sigs2<-df_cor_all_DAibd_all_sigs%>%
+  mutate(effect=ifelse(measure=="meanTE.IBDHC" & IBDHC=="non-sig",NA,effect),
+         effect=ifelse(measure=="meanTE.CDHC" & CDHC=="non-sig",NA,effect),
+         effect=ifelse(measure=="meanTE.UCHC" & UCHC=="non-sig",NA,effect),
+         effect=ifelse(measure=="meanTE.CDUC" & CDUC=="non-sig",NA,effect),
+         significance=ifelse(
+           measure=="meanTE.IBDHC",paste0(robustDA," IBD-associated"), ifelse(
+             measure=="meanTE.CDHC",paste0(CDHC," IBD-associated"), ifelse(
+               measure=="meanTE.UCHC",paste0(UCHC," IBD-associated"),ifelse(
+                 measure=="meanTE.CDUC",paste0(CDUC," IBD-associated"),ifelse(
+                   measure=="rho","sig. correlated","x"
+                 )
+               )
+             )
+           )
+         ),
+         significance=ifelse(significance=="non-sig IBD-associated",NA,significance),
+         measure=ifelse(measure=="meanTE.IBDHC","meanTE IBD - control",measure),
+         measure=ifelse(measure=="meanTE.CDHC","meanTE CD - control",measure),
+         measure=ifelse(measure=="meanTE.UCHC","meanTE UC - control",measure),
+         measure=ifelse(measure=="meanTE.CDUC","meanTE CD - UC",measure))
+
+
+p_cor_all_DAibd_all_sigs<-ggplot(df_cor_all_DAibd_all_sigs2,
+   aes(effect,reorder(gsub(".*;","",gsub(";MGS."," MGS.",MGS)),rho2),color=cohort,shape=significance))+
     geom_vline(xintercept=0, linetype=2, color="grey50")+
     geom_point(size=3, alpha=0.7) +
+    scale_shape_manual(values=shape_sig)+
     facet_grid(.~measure, scales = "free_x") +
     ylab("MGS") +
+    scale_x_reverse() +
     theme_bw()
 p_cor_all_DAibd_all_sigs
+legened_p_cor_all_DAibd_all_sigs<-get_legend(p_cor_all_DAibd_all_sigs)
+
+p_cor_all_DAibd_all_sigs_DAonly<-ggplot(df_cor_all_DAibd_all_sigs2%>%filter(measure!="rho"),
+   aes(effect,reorder(gsub(".*;","",gsub(";MGS."," MGS.",MGS)),rho2),shape=significance))+
+    geom_vline(xintercept=0, linetype=2, color="grey50")+
+    geom_point(size=3) +
+    scale_shape_manual(values=shape_sig)+
+    facet_grid(.~measure, scales = "free_x") +
+    ylab("MGS") +
+    scale_x_reverse() +
+    theme_bw()+
+    theme(legend.position = "none")
+p_cor_all_DAibd_all_sigs_DAonly
+
+p_cor_all_DAibd_all_sigs_rhoonly<-ggplot(df_cor_all_DAibd_all_sigs2%>%filter(measure=="rho"),
+   aes(effect,reorder(gsub(".*;","",gsub(";MGS."," MGS.",MGS)),rho2),color=cohort,shape=significance))+
+    geom_vline(xintercept=0, linetype=2, color="grey50")+
+    geom_point(size=3, alpha=0.7) +
+    scale_shape_manual(values=shape_sig)+
+    facet_grid(.~measure, scales = "free_x") +
+    ylab("MGS") +
+    theme_bw()+
+    theme(axis.text.y=element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          legend.position = "none")
+p_cor_all_DAibd_all_sigs_rhoonly
+
+p_cor_all_DAibd_all_sigs_combi<-plot_grid(p_cor_all_DAibd_all_sigs_DAonly,p_cor_all_DAibd_all_sigs_rhoonly,legened_p_cor_all_DAibd_all_sigs,rel_widths = c(5,1,1), nrow=1)
 ```
 
 ### export plot with combined results
 
 ```{r, results=FALSE,message=FALSE,warning=FALSE}
 pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/MGScorvsDAibd2_long_cross.q0.1.pdf"),height=20,width=14)
-p_cor_all_DAibd_all_sigs
+p_cor_all_DAibd_all_sigs_combi
 dev.off()
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/MGScorvsDAibd2_long_cross.q0.1.png"),p_cor_all_DAibd_all_sigs,height=15,width=10)
+ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/MGScorvsDAibd2_long_cross.q0.1.png"),p_cor_all_DAibd_all_sigs_combi,height=20,width=14)
 ```
 
 ```{r fig.width=7, fig.height=6}
