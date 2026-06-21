@@ -24,6 +24,8 @@ qval=0.1 # q-value cutoff
 col_IBD2<-c("gold2","#E31A1C","darkorange","#1F78B4","#1F78B4","#1F78B4", "grey40","#E8A400")
 names(col_IBD2)<-c("IBD","CD","UC","healthy","control", "Healthy","variable","disease")
 
+shape_sig<-c(15,16,3)
+names(shape_sig)<-c("robust IBD-associated","sig. correlated", "variable IBD-associated")
 ```
 
 ### define functions
