@@ -1,5 +1,6 @@
 # This is a function to infer prevalence of a taxa in a taxa-table
 # There is also another function to filter taxa according with their prevalence in multiple data sets
+# Author: Stefano Romano
 
 
 prevalence.est<-function(df, taxa.are.rows = T){

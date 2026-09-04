@@ -1,6 +1,6 @@
 ---
 title: "Prevalence filtration"
-author: "SRomano (adapted by RAnsorge)"
+author: "Stefano Romano; adapted by Rebecca Ansorge"
 date: '2023-11-11'
 output: html_document
 editor_options: 

@@ -1,6 +1,6 @@
 ---
 title: "DA_IBD_LM"
-author: "Stefano Romano, adapted by Rebecca Ansorge"
+author: "Stefano Romano; adapted by Rebecca Ansorge"
 date: "13 November 2023"
 output: 
   html_document: 

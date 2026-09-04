@@ -1,6 +1,6 @@
 ---
 title: "00_resampling"
-author: "Rebecca Ansorge"
+author: "Rebecca Ansorge and Stefano Romano"
 date: "09/12/2023"
 output: html_document
 ---
