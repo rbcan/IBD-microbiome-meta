@@ -1,4 +1,5 @@
 # This function runs lm for case control studies
+# Author: Stefano Romano
 # It requires:
 # * a list of df containing the data. df in the list have to have row = sample names; col = species
 # * the meta data matching the samples in the list above. Need a variable cales Cohort and one called Sample_ID
