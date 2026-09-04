@@ -38,20 +38,21 @@ library(tidyverse)
 ```
 
 ```{r}
-PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
 ```
 
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
 dim(meta)
 sapply(meta, class)
 
 meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
 meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
 
-meta.summary<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
+meta.summary<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
 
 
 ```
@@ -119,14 +120,11 @@ the mx number of samples per individual is 25.
 I will re sample up to 20 time the data
 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
-#orde the data randomly and then select only a single sample
 set.seed(342)
-# I can split the metadata in cohort and then in Individuals and then get indices of each 
 
 meta.long.cohort<-split(meta.long, f = meta.long$Cohort_precise)
 meta.long.cohort.ind<-lapply(meta.long.cohort, function(x) split(x, f = x$IndividualID))
 
-# createa a df with all ids that I will use
 df.row<-data.frame("Sample1", "Sample2", "Sample3", "Sample4", "Sample5", "Sample6",
                      "Sample7", "Sample8", "Sample9", "Sample10", "Sample11",
                      "Sample12", "Sample13", "Sample14", "Sample15", "Sample16", "Sample17",
@@ -149,8 +147,7 @@ df.row<-df.row[-1,] # because the first row is names
 
 # check that the number of samples is the same as unique IDs
 nrow(df.row) == length(unique(meta.long$IndividualID))
-# I think that the reason why they are not unique is that there are similar ids in different studies
-write_delim(df.row,paste0(PATHanalNov2023,"PrepData/resampling.20.txt"),delim="\t")
+write_delim(df.row,paste0(PATHanalNov2023,"resampling.20.txt"),delim="\t")
 
 ```
 
@@ -158,7 +155,7 @@ write_delim(df.row,paste0(PATHanalNov2023,"PrepData/resampling.20.txt"),delim="\
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
 dim(meta)
 sapply(meta, class)
 
@@ -206,8 +203,7 @@ df.row<-df.row[-1,] # because the first row is names
 
 # check that the number of samples is the same as unique IDs
 nrow(df.row) == length(unique(meta.long$IndividualID))
-# I think that the reason why they are not unique is that there are similar ids in different studies
-write_delim(df.row,paste0(PATHanalNov2023,"PrepData/resampling.CDUC.20.txt"),delim="\t")
+write_delim(df.row,paste0(PATHanalNov2023,"resampling.CDUC.20.txt"),delim="\t")
 ```
 
 

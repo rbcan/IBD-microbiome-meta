@@ -1,0 +1,372 @@
+---
+title: "Get significant taxa"
+author: "Rebecca Ansorge"
+date: "27/02/2024"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
+PATH=paste0(gitdir,"/data/")
+q<-0.1
+strainpath=paste0(gitdir,"/data/strains/")
+kasiapath=paste0(gitdir,"/data/strains/")
+```
+
+```{r}
+# import prevalence filtered MGS IDs
+prevMGS.tab<-read_csv(paste0(PATHanalNov2023,"prev.filt.MGS.txt"))%>%
+  mutate(prevMGS=gsub('.*;MGS','MGS',x))
+prevMGS<-prevMGS.tab$prevMGS
+
+# import strain results into list
+## IBD
+ibd.strains.pmva.all<-readRDS(paste0(PATHanalNov2023,"strains/ibd.strains.pmva.all.June23.rds"))
+ibd2.strains.pmva.all<-readRDS(paste0(PATHanalNov2023,"strains/ibd2.strains.pmva.all.June23.rds"))
+
+```
+
+```{r}
+# all species DA
+metaDA<-readRDS(paste0(PATHanalNov2023,"DA_analysis/l.meta.prevfilt.rds"))
+
+df.ibd.DA<-do.call(rbind, metaDA)
+count.DA<-df.ibd.DA%>%
+  mutate(significance=ifelse(p.adjust<q,"significant","non-significant"))%>%
+  dplyr::filter(significance=="significant")%>%
+  count(bins)%>%
+  rename("n_sig"=n)
+count20.DA<-count.DA%>%
+  dplyr::filter(n_sig==20)
+countLess20.DA<-count.DA%>%
+  dplyr::filter(n_sig<20)
+robustMGSDA<-count20.DA$bins
+variableMGSDA<-countLess20.DA$bins
+
+ibd.DA.all<-lapply(metaDA, function(m){
+  m %>%
+    mutate(robustDA=ifelse(bins%in%robustMGSDA,"robust",ifelse(bins%in%variableMGSDA,"variable","non-sig")))%>%
+    left_join(count.DA, by="bins")%>%
+    mutate(n_sig=ifelse(robustDA=="non-sig",0,n_sig))
+})
+
+
+
+#strainR2vsTE.inclNonSig<-readRDS(paste0(PATHanalNov2023,"strains/strainR2vsTE.inclNonSig.June23.rds"))
+
+```
+
+
+```{r}
+ibdRes1<-do.call(rbind, ibd.strains.pmva.all)
+ibdRes1<-ibdRes1%>%
+  group_by(var)%>%
+  mutate(meanR2=mean(R2))%>%
+  mutate(stdevR2=sd(R2))%>%
+  select(c(var,meanR2,stdevR2,robustStrains,n_sig))%>%
+  distinct()
+
+ibdRes2<-do.call(rbind, ibd2.strains.pmva.all)
+ibdRes2<-ibdRes2%>%
+  group_by(var)%>%
+  mutate(meanR2=mean(R2))%>%
+  mutate(stdevR2=sd(R2))%>%
+  select(c(var,meanR2,stdevR2,robustStrains,n_sig))%>%
+  distinct()
+
+STRAINmeans_ibd<-ibdRes1%>%
+  rename(MGS=var)%>%
+  rename(meanR2_IBD=meanR2)%>%
+  rename(stdevR2_IBD=stdevR2)%>%
+  rename(robustStrains_IBD=robustStrains)%>%
+  rename(n_sig_IBD=n_sig)
+STRAINmeans_ibd2<-ibdRes2%>%
+  rename(MGS=var)%>%
+  rename(meanR2_CDUCCTRL=meanR2)%>%
+  rename(stdevR2_CDUCCTRL=stdevR2)%>%
+  rename(robustStrains_CDUCCTRL=robustStrains)%>%
+  rename(n_sig_CDUCCTRL=n_sig)
+
+DAmeans_ibd<-do.call(rbind, ibd.DA.all)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",bins))%>%
+  mutate(TE.random=as.numeric(TE.random))
+DAmeans_ibd<-DAmeans_ibd%>%
+  group_by(MGS)%>%
+  mutate(meanTE=mean(TE.random))%>%
+  mutate(stdevTE=sd(TE.random))%>%
+  mutate(robustDA=robustDA)%>%
+  select(c(bins,meanTE,stdevTE,robustDA,n_sig))%>%
+  distinct()%>%
+  rename(n_sig_DA=n_sig)%>%
+  mutate(enrichedIn=ifelse(robustDA!="non-sig" & meanTE>0,"IBD",ifelse(robustDA!="non-sig" & meanTE<0,"CTRL",NA)))
+
+strainR2vsTE.inclNonSig.ibd_ibd2<-STRAINmeans_ibd %>%
+  full_join(STRAINmeans_ibd2, by="MGS") %>%
+  full_join(DAmeans_ibd, by="MGS") 
+
+```
+
+CD vs CTRLs
+
+```{r}
+# all species DA
+metaDA.cdhc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/l.meta.cdhc.prevfilt.rds"))
+
+df.cdhc.DA<-do.call(rbind, metaDA.cdhc)
+count.cdhc.DA<-df.cdhc.DA%>%
+  mutate(significance=ifelse(p.adjust<q,"significant","non-significant"))%>%
+  dplyr::filter(significance=="significant")%>%
+  count(bins)%>%
+  rename("n_sig"=n)
+count20.cdhc.DA<-count.cdhc.DA%>%
+  dplyr::filter(n_sig==20)
+countLess20.cdhc.DA<-count.cdhc.DA%>%
+  dplyr::filter(n_sig<20)
+robustMGSDA.cdhc<-count20.cdhc.DA$bins
+variableMGSDA.cdhc<-countLess20.cdhc.DA$bins
+
+cdhc.DA.all<-lapply(metaDA.cdhc, function(m){
+  m %>%
+    mutate(robustDA=ifelse(bins%in%robustMGSDA.cdhc,"robust",ifelse(bins%in%variableMGSDA.cdhc,"variable","non-sig")))%>%
+    left_join(count.cdhc.DA, by="bins")%>%
+    mutate(n_sig=ifelse(robustDA=="non-sig",0,n_sig))
+})
+
+DAmeans_cdhc<-do.call(rbind, cdhc.DA.all)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",bins))%>%
+  mutate(TE.random=as.numeric(TE.random))
+DAmeans_cdhc<-DAmeans_cdhc%>%
+  group_by(MGS)%>%
+  mutate(meanTE.cdhc=mean(TE.random))%>%
+  mutate(stdevTE.cdhc=sd(TE.random))%>%
+  mutate(robustDA.cdhc=robustDA)%>%
+  select(c(meanTE.cdhc,stdevTE.cdhc,robustDA.cdhc,n_sig))%>%
+  distinct()%>%
+  rename(n_sig_DA.cdhc=n_sig)%>%
+  mutate(enrichedIn.cdhc=ifelse(robustDA.cdhc!="non-sig" & meanTE.cdhc<0,"CD",ifelse(robustDA.cdhc!="non-sig" & meanTE.cdhc>0,"CTRL",NA)))
+
+strainR2vsTE.inclNonSig.ibd_ibd2<-strainR2vsTE.inclNonSig.ibd_ibd2 %>%
+  full_join(DAmeans_cdhc, by="MGS") 
+
+```
+
+UC vs CTRLs
+
+```{r}
+# all species DA
+metaDA.uchc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/l.meta.uchc.prevfilt.rds"))
+
+df.uchc.DA<-do.call(rbind, metaDA.uchc)
+count.uchc.DA<-df.uchc.DA%>%
+  mutate(significance=ifelse(p.adjust<q,"significant","non-significant"))%>%
+  dplyr::filter(significance=="significant")%>%
+  count(bins)%>%
+  rename("n_sig"=n)
+count20.uchc.DA<-count.uchc.DA%>%
+  dplyr::filter(n_sig==20)
+countLess20.uchc.DA<-count.uchc.DA%>%
+  dplyr::filter(n_sig<20)
+robustMGSDA.uchc<-count20.uchc.DA$bins
+variableMGSDA.uchc<-countLess20.uchc.DA$bins
+
+uchc.DA.all<-lapply(metaDA.uchc, function(m){
+  m %>%
+    mutate(robustDA=ifelse(bins%in%robustMGSDA.uchc,"robust",ifelse(bins%in%variableMGSDA.uchc,"variable","non-sig")))%>%
+    left_join(count.uchc.DA, by="bins")%>%
+    mutate(n_sig=ifelse(robustDA=="non-sig",0,n_sig))
+})
+
+DAmeans_uchc<-do.call(rbind, uchc.DA.all)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",bins))%>%
+  mutate(TE.random=as.numeric(TE.random))
+DAmeans_uchc<-DAmeans_uchc%>%
+  group_by(MGS)%>%
+  mutate(meanTE.uchc=mean(TE.random))%>%
+  mutate(stdevTE.uchc=sd(TE.random))%>%
+  mutate(robustDA.uchc=robustDA)%>%
+  select(c(meanTE.uchc,stdevTE.uchc,robustDA.uchc,n_sig))%>%
+  distinct()%>%
+  rename(n_sig_DA.uchc=n_sig)%>%
+  mutate(enrichedIn.uchc=ifelse(robustDA.uchc!="non-sig" & meanTE.uchc<0,"UC",ifelse(robustDA.uchc!="non-sig" & meanTE.uchc>0,"CTRL",NA)))
+
+strainR2vsTE.inclNonSig.ibd_ibd2<-strainR2vsTE.inclNonSig.ibd_ibd2 %>%
+  full_join(DAmeans_uchc, by="MGS") 
+
+```
+
+CD vs UC
+
+```{r}
+# all species DA
+metaDA.cduc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/l.meta.cduc.prevfilt.rds"))
+
+df.cduc.DA<-do.call(rbind, metaDA.cduc)
+count.cduc.DA<-df.cduc.DA%>%
+  mutate(significance=ifelse(p.adjust<q,"significant","non-significant"))%>%
+  dplyr::filter(significance=="significant")%>%
+  count(bins)%>%
+  rename("n_sig"=n)
+count20.cduc.DA<-count.cduc.DA%>%
+  dplyr::filter(n_sig==20)
+countLess20.cduc.DA<-count.cduc.DA%>%
+  dplyr::filter(n_sig<20)
+robustMGSDA.cduc<-count20.cduc.DA$bins
+variableMGSDA.cduc<-countLess20.cduc.DA$bins
+
+cduc.DA.all<-lapply(metaDA.cduc, function(m){
+  m %>%
+    mutate(robustDA=ifelse(bins%in%robustMGSDA.cduc,"robust",ifelse(bins%in%variableMGSDA.cduc,"variable","non-sig")))%>%
+    left_join(count.cduc.DA, by="bins")%>%
+    mutate(n_sig=ifelse(robustDA=="non-sig",0,n_sig))
+})
+
+DAmeans_cduc<-do.call(rbind, cduc.DA.all)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",bins))%>%
+  mutate(TE.random=as.numeric(TE.random))
+DAmeans_cduc<-DAmeans_cduc%>%
+  group_by(MGS)%>%
+  mutate(meanTE.cduc=mean(TE.random))%>%
+  mutate(stdevTE.cduc=sd(TE.random))%>%
+  mutate(robustDA.cduc=robustDA)%>%
+  select(c(meanTE.cduc,stdevTE.cduc,robustDA.cduc,n_sig))%>%
+  distinct()%>%
+  rename(n_sig_DA.cduc=n_sig)%>%
+  mutate(enrichedIn.cduc=ifelse(robustDA.cduc!="non-sig" & meanTE.cduc<0,"CD",ifelse(robustDA.cduc!="non-sig" & meanTE.cduc>0,"UC",NA)))
+
+strainR2vsTE.inclNonSig.ibd_ibd2<-strainR2vsTE.inclNonSig.ibd_ibd2 %>%
+  full_join(DAmeans_cduc, by="MGS") 
+
+```
+
+```{r}
+# corMGS<-read.csv(paste0(PATHanalNov2023,"Downstream/Results/MGScorvsDAibd.csv"))%>%
+#   select(MGS,pvalue,cohort,padjust,sigcorr,rho2,measure)%>%
+#   mutate(MGS=gsub(".*;MGS","MGS",MGS))%>%
+#   filter(measure=="rho")%>%
+#   select(c(MGS,cohort,sigcorr,rho2))%>%
+#   mutate(humanReadCorrelation=ifelse(rho2>0,"positive","negative"))%>%
+#   select(-c(rho2))
+
+corMGS<-read.csv(paste0(PATHanalNov2023,"MGScorvsDAibd.q0.1.crosslong.csv"))%>%
+  select(MGS,pvalue,cohort,padjust,sigcorr,rho2,measure)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",MGS))%>%
+  dplyr::filter(measure=="rho")%>%
+  select(c(MGS,cohort,sigcorr,rho2))%>%
+  mutate(humanReadCorrelation=ifelse(rho2>0,"positive","negative"))%>%
+  select(-c(rho2))
+
+countCHRT<-corMGS%>%
+  group_by(MGS,cohort)%>%
+  count()%>%
+  select(-n)%>%
+  group_by(MGS)%>%
+  count()%>%
+  rename(n_chrt=n)
+
+countOBS<-corMGS%>%
+  group_by(MGS)%>%
+  count()%>%
+  rename(n_obs=n)
+
+discrMGS<-(corMGS%>%
+  select(-c(cohort,sigcorr))%>%
+  group_by(MGS)%>%
+  left_join(countCHRT,by="MGS")%>%
+  left_join(countOBS,by="MGS")%>%
+  distinct()%>%count(MGS)%>%
+  filter(n>1))$MGS
+
+corMGS.distinct<-corMGS%>%
+  select(-c(cohort,sigcorr))%>%
+  group_by(MGS)%>%
+  left_join(countCHRT,by="MGS")%>%
+  left_join(countOBS,by="MGS")%>%
+  distinct()%>%
+  mutate(humanReadCorrelation=ifelse(MGS%in%discrMGS,"positive_negative",humanReadCorrelation))%>%
+  distinct()
+
+unique(corMGS.distinct$MGS)%>%length
+corMGS.distinct$MGS%>%length
+
+
+
+countCHRT_PosNegSeparate<-corMGS%>%
+  group_by(MGS,cohort)%>%
+  count(humanReadCorrelation)%>%
+  select(-n)%>%
+  group_by(MGS)%>%
+  count(humanReadCorrelation)%>%
+  rename(n_chrt=n)
+
+countOBS_PosNegSeparate<-corMGS%>%
+  group_by(MGS)%>%
+  count(humanReadCorrelation)%>%
+  rename(n_obs=n)
+
+discrMGS_PosNegSeparate<-(corMGS%>%
+  select(-c(cohort,sigcorr))%>%
+  group_by(MGS)%>%
+  left_join(countCHRT_PosNegSeparate,by="MGS")%>%
+  left_join(countOBS_PosNegSeparate,by="MGS")%>%
+  distinct()%>%count(MGS)%>%
+  filter(n>1))$MGS
+
+
+corMGS.distinct_PosNegSeparate<-corMGS%>%
+  select(-c(cohort,sigcorr))%>%
+  group_by(MGS)%>%
+  left_join(countCHRT_PosNegSeparate,by=c("MGS","humanReadCorrelation"))%>%
+  left_join(countOBS_PosNegSeparate,by=c("MGS","humanReadCorrelation"))%>%
+  distinct()
+
+
+unique(corMGS.distinct_PosNegSeparate$MGS)%>%length
+corMGS.distinct_PosNegSeparate$MGS%>%length
+
+strainR2vsTE.inclNonSig.ibd_ibd2_PosNegSeparate<-strainR2vsTE.inclNonSig.ibd_ibd2 %>%
+  left_join(corMGS.distinct_PosNegSeparate, by="MGS")
+
+#meanRho
+corMGS_rho<-read.csv(paste0(PATHanalNov2023,"MGScorvsDAibd.q0.1.crosslong.csv"))%>%
+  filter(measure=="rho")%>%
+  mutate(MGS=gsub("$",")",gsub(".*;","",gsub(";MGS"," (MGS",MGS))))
+corMGS_rho<-corMGS_rho%>%
+  group_by(MGS)%>%
+  summarize(meanRho=mean(rho2))%>%
+  left_join(corMGS_rho, by="MGS")%>%
+  distinct(MGS, comparison,.keep_all = TRUE)%>%
+  select(c(MGS,meanRho))%>%
+  mutate(MGS=gsub(".*[(]MGS","MGS",MGS))%>%
+  mutate(MGS=gsub(")","",MGS))
+```
+
+
+```{r}
+strainR2vsTE.inclNonSig.ibd_ibd2<-strainR2vsTE.inclNonSig.ibd_ibd2 %>%
+  left_join(corMGS.distinct, by="MGS")%>%
+  left_join(corMGS_rho, by="MGS")
+```
+
+
+```{r}
+strainR2vsTE.inclNonSig.ibd_ibd2%>%nrow()
+strainR2vsTE.inclNonSig.ibd_ibd2%>%
+  left_join(corMGS_rho, by="MGS")
+```
+
+```{r}
+strainR2vsTE.inclNonSig.ibd_ibd2
+write.csv(strainR2vsTE.inclNonSig.ibd_ibd2,paste0(PATHanalNov2023,"rds/overview.MGS.DA_q0.1_strains_cor_genes.csv"))
+saveRDS(strainR2vsTE.inclNonSig.ibd_ibd2,paste0(PATHanalNov2023,"rds/overview.MGS.DA_q0.1_strains_cor_genes.rds"))
+```
+
+```{r}
+
+saveRDS(strainR2vsTE.inclNonSig.ibd_ibd2_PosNegSeparate,paste0(PATHanalNov2023,"rds/overview.MGS.DA_q0.1_strains_cor_genes_PosNegSeparate.rds"))
+```
+

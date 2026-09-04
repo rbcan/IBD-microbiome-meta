@@ -35,7 +35,8 @@ library(ggExtra)
 ```
 
 ```{r}
-PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
 ```
 
 # Load and clean data
@@ -43,7 +44,7 @@ Load the abundance file and the metadata
 
 ```{r, message=F}
 
-spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+spec<-read.delim(paste0(PATHanalNov2023,"IBD.MGSabundance.txt"), header = T, row.names = 1)
 dim(spec)
 
 
@@ -85,7 +86,7 @@ There are 1546 Species and 4839 samples
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.1TimeP.txt"), header = T, sep = "\t") # load a single time point metadata
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.1TimeP.txt"), header = T, sep = "\t") # load a single time point metadata
 dim(meta)
 sapply(meta, class)
 
@@ -155,8 +156,6 @@ Fang_UCSD_IBD_Biobank,USA
 
 ## Make a plot using the single timepoints
 ```{r}
-# just check that metadata and samples are the same
-dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/Figures"), recursive = T)
 
 # make ordination using phyloseq
 rownames(meta)<-meta$SmplID
@@ -187,7 +186,7 @@ sc.m$IBD2<-as.factor(sc.m$IBD2)
     labs(title = "PCoA based on Bray-Curtis dissimilarities"))
 (og.cpoa<-ggMarginal(o.pcoa, groupFill = TRUE, size =8))
 
-saveRDS(sc.m,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pcoa.data.rds"))
+saveRDS(sc.m,paste0(PATHanalNov2023,"DA_analysis/beta.pcoa.data.rds"))
 
 # perform dbRDA with conditioning per study
 meta$Cohort_precise<-as.factor(meta$Cohort_precise)
@@ -218,7 +217,7 @@ sc.m$IBD2<-as.factor(sc.m$IBD2)
         labs(title = "dbRDA based on Bray-Curtis dissimilarities"))
 
 (og<-ggMarginal(o, groupFill = TRUE, size =8))
-saveRDS(sc.m,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.dbrda.data.rds"))
+saveRDS(sc.m,paste0(PATHanalNov2023,"DA_analysis/beta.dbrda.data.rds"))
 ```
 
 # Permanova on first time-point data
@@ -258,9 +257,9 @@ Cohort_precise explains 12.4% of the variation
 
 ```{r}
 # Save permanova results in RDS
-saveRDS(ad.bc,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmva.bc.ibd.rds"))
-saveRDS(ad.bc.ibd2,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmvaPair.bc.ibd2.rds"))
-saveRDS(ad.bc.cohort,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pmva.bc.cohort.rds"))
+saveRDS(ad.bc,paste0(PATHanalNov2023,"DA_analysis/beta.pmva.bc.ibd.rds"))
+saveRDS(ad.bc.ibd2,paste0(PATHanalNov2023,"DA_analysis/beta.pmvaPair.bc.ibd2.rds"))
+saveRDS(ad.bc.cohort,paste0(PATHanalNov2023,"DA_analysis/beta.pmva.bc.cohort.rds"))
 ```
 
 # Calculate distance from centroids
@@ -269,7 +268,7 @@ Load the abundance file and the metadata
 
 ```{r, message=F}
 
-spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+spec<-read.delim(paste0(PATHanalNov2023,"IBD.MGSabundance.txt"), header = T, row.names = 1)
 dim(spec)
 
 ```
@@ -308,7 +307,7 @@ dim(spec.tss)
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t") # load a single time point metadata
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t") # load a single time point metadata
 dim(meta)
 sapply(meta, class)
 
@@ -409,7 +408,7 @@ for(i in 1:length(l_spec.cross.bc)){
 
 # merge
 df_all_cross<-do.call(rbind, l_spec.cross.distances)
-saveRDS(df_all_cross,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.df_all_cross.rds"))
+saveRDS(df_all_cross,paste0(PATHanalNov2023,"DA_analysis/beta.df_all_cross.rds"))
 ```
 
 ## longitudinal
@@ -418,9 +417,9 @@ Edit: Use the resampling dataset from the DA analysis for the beta-div
 
 ```{r}
 # import the dataframe with re-sampling samples IBD/healthy
-resam.ibd.df<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.20.txt"))
+resam.ibd.df<-read.delim2(paste0(PATHanalNov2023,"resampling.20.txt"))
 unique(resam.ibd.df$Cohort)
-resam.ibd2.df<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.CDUC.20.txt"))
+resam.ibd2.df<-read.delim2(paste0(PATHanalNov2023,"resampling.CDUC.20.txt"))
 unique(resam.ibd2.df$Cohort)
 ```
 
@@ -463,7 +462,7 @@ l_spec.long.distances.df.20<-lapply(names(resam.ibd.df[1:20]), function(n){
   l_spec.long.distances.df
 })
 
-saveRDS(l_spec.long.distances.df.20,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS//beta.l_spec.long.distances.df.20.rds"))
+saveRDS(l_spec.long.distances.df.20,paste0(PATHanalNov2023,"DA_analysis/beta.l_spec.long.distances.df.20.rds"))
 ```
 
 #### IBD2
@@ -503,7 +502,7 @@ l_spec.long.distances.df.20ibd2<-lapply(names(resam.ibd2.df[1:20]), function(n){
   l_spec.long.distances.df
 })
 
-saveRDS(l_spec.long.distances.df.20ibd2,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.l_spec.long.distances.df.20ibd2.rds"))
+saveRDS(l_spec.long.distances.df.20ibd2,paste0(PATHanalNov2023,"DA_analysis/beta.l_spec.long.distances.df.20ibd2.rds"))
 ```
 
 Distances from control centroids versus inflammation index
@@ -591,12 +590,8 @@ l_spec.long.bc20<-lapply(names(resam.ibd.df[1:20]), function(n){
 
 ```{r}
 #load inflammation index
-humanReads<-read.delim2(paste0(PATHanalNov2023,"humanReads/IBD2022.4.map"), comment.char = "#", header=FALSE)%>%
-  select(1,36)
-colnames(humanReads)<-c("SmplID","HumanRds")
-head(humanReads)
+meta_hr<-readRDS(paste0(PATHanalNov2023,"rds/meta_hr.rds"))
 
-meta_hr<-inner_join(meta,humanReads,by="SmplID")
 meta_hr$HumanRds<-as.numeric(meta_hr$HumanRds)
 
 # calculate human read ranks
@@ -633,8 +628,8 @@ p_ctrlDitst_HRlog<-ggplot(CTRLdistances.crossLongS1_hrRanks,aes(x=log2(HumanRds)
   facet_wrap(.~Cohort_precise, scales = "free")+
   theme_bw()
 p_ctrlDitst_HRlog
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_ctrlDist_HRlog.png"),p_ctrlDitst_HRlog, width=8, height=6)
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_ctrlDist_HRlog.pdf"),p_ctrlDitst_HRlog, width=8, height=6)
+ggsave(paste0(PATHanalNov2023,"suppl_ctrlDist_HRlog.png"),p_ctrlDitst_HRlog, width=8, height=6)
+ggsave(paste0(PATHanalNov2023,"suppl_ctrlDist_HRlog.pdf"),p_ctrlDitst_HRlog, width=8, height=6)
 ```
 
 ```{r}
@@ -643,12 +638,16 @@ ctrlDist.vec<-CTRLdistances.crossLongS1_hrRanks$distances_ccentrCTRL
 hr.vec<-CTRLdistances.crossLongS1_hrRanks$HumanRds
 cohort.vec<-as.factor(CTRLdistances.crossLongS1_hrRanks$Cohort_precise)
 
-lmm_ctrlDitst_HRlog2<-lmerTest::lmer(ctrlDist.vec ~ log2(hr.vec) +(1|cohort.vec))
+lmm_ctrlDitst_HRlog2<-lmerTest::lmer(log2(ctrlDist.vec) ~ log2(hr.vec) +(1|cohort.vec))
 summary_lmm_ctrlDitst_HRlog2<-summary(lmm_ctrlDitst_HRlog2)
 summary_lmm_ctrlDitst_HRlog2
 ```
 
-#Save workspace
-```{r, message =F, warning =F}
-save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/Beta_IBD_time.RData"))
+```{r}
+# test with linear model random effect cohort
+hr.ranks.vec<-CTRLdistances.crossLongS1_hrRanks$rankHumanRds
+
+lmm_ctrlDitst_HRlog2_ranks<-lmerTest::lmer(ctrlDist.vec ~ hr.ranks.vec +(1|cohort.vec))
+summary_lmm_ctrlDitst_HRlog2_ranks<-summary(lmm_ctrlDitst_HRlog2_ranks)
+summary_lmm_ctrlDitst_HRlog2_ranks
 ```

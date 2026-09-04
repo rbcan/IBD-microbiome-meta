@@ -40,7 +40,8 @@ library(MatchIt)
 # Load and clean data
 
 ```{r}
-PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
 ```
 
 ```{r}
@@ -54,7 +55,7 @@ Load the abundance file and the metadata
 
 ```{r, message=F}
 
-spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+spec<-read.delim(paste0(PATHanalNov2023,"IBD.MGSabundance.txt"), header = T, row.names = 1)
 dim(spec)
 
 rownames(spec) %>% tail
@@ -95,7 +96,7 @@ There are 2036 Species and 4839 samples
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t") # load a single time point metadata
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t") # load a single time point metadata
 dim(meta)
 sapply(meta, class)
 
@@ -112,7 +113,7 @@ meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
 spec.tss<-spec.tss[, which(names(spec.tss) %in% meta$SmplID)]
 dim(spec.tss)
 
-spec.tss[rowSums(spec.tss) == 0,] %>% rownames() # now there are species with 0. Remove them
+spec.tss[rowSums(spec.tss) == 0,] %>% rownames() # now thereo are species with 0. Remove them
 
 spec.tss<-spec.tss[rowSums(spec.tss) != 0,] 
 dim(spec.tss)
@@ -134,12 +135,9 @@ dim(meta)
 ## import human reads
 
 ```{r}
-humanReads<-read.delim2(paste0(PATHanalNov2023,"humanReads/IBD2022.4.map"), comment.char = "#", header=FALSE)%>%
-  select(1,36)
-colnames(humanReads)<-c("SmplID","HumanRds")
-head(humanReads)
 
-meta<-inner_join(meta,humanReads,by="SmplID")
+meta<-readRDS(paste0(PATH,"rds/meta_hr.rds"))
+
 meta$HumanRds<-as.numeric(meta$HumanRds)
 ```
 
@@ -263,7 +261,7 @@ qqnorm(resid(dist_hr_log2_lm))
 
 emmeans::emm(dist_hr_log2_lm,pairwise~deltaHumanRds_log2)
 
-saveRDS(df.beta.pair,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/beta.pair.tempInd.rds"))
+saveRDS(df.beta.pair,paste0(PATHanalNov2023,"DA_analysis/beta.pair.tempInd.rds"))
 ```
 
 # Testing correlation between BC distances and human read differences
@@ -416,8 +414,8 @@ perInd_dist_vs_deltaHR_meta.df%>%
   group_by(cohort)%>%
   count(IBD2)
 
-saveRDS(dist_hr_indNest_log2_lm,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/dist_hr_indNest_log2_lm.rds"))
-saveRDS(dist_hr_indNest_log2_lm_perCohort,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/dist_hr_indNest_log2_lm_perCohort.rds"))
+saveRDS(dist_hr_indNest_log2_lm,paste0(PATHanalNov2023,"DA_analysis/dist_hr_indNest_log2_lm.rds"))
+saveRDS(dist_hr_indNest_log2_lm_perCohort,paste0(PATHanalNov2023,"DA_analysis/dist_hr_indNest_log2_lm_perCohort.rds"))
 
 ```
 
@@ -471,7 +469,7 @@ coin::wilcox_test(slope ~ IBD2 | cohort, data=slopeDF%>%filter(IBD2!="CD"))
 coin::wilcox_test(slope ~ IBD2 | cohort, data=slopeDF%>%filter(IBD2!="UC"))
 
 
-saveRDS(perInd_dist_vs_deltaHR_meta_slope.df,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/perInd_dist_vs_deltaHR.rds"))
+saveRDS(perInd_dist_vs_deltaHR_meta_slope.df,paste0(PATHanalNov2023,"DA_analysis/perInd_dist_vs_deltaHR.rds"))
 
 ```
 
@@ -504,6 +502,8 @@ meta_hr_cond_num<-meta%>%
   mutate(HumanRds_group=ifelse(IBD2=="healthy","control",ifelse(HumanRds>HighHR_perc80,"HighHR",ifelse(HumanRds<LowHR_perc20,"LowHR",NA))))%>% 
   filter(!is.na(HumanRds_group))%>%
   distinct(IndividualID, .keep_all = TRUE)
+
+saveRDS(meta_hr_cond_num, paste0(PATHanalNov2023,"humanReads/chrt_cond_specific_HRpercentiles.rds"))
 
 #check number of Individuals with samples classified as high or low HR for both
 meta_hr_num$IndividualID%>%length()
@@ -660,7 +660,8 @@ n.ctrl_vs_ctrlHigh<-dist.HL_hr_cond_gat_intrChrt%>%filter(comparison2%in%c("cont
 lowHR_vs_highHR.df<-data.frame(
   comparison=c("ctrlLow_vs_ctrlHigh","ctrl_vs_ctrlLow","ctrl_vs_ctrlHigh"),
   p=c(coin::pvalue(wt.ctrlLow_vs_ctrlHigh),coin::pvalue(wt.ctrl_vs_ctrlLow),coin::pvalue(wt.ctrl_vs_ctrlHigh)),
-  effectSize=c(coin::statistic(wt.ctrlLow_vs_ctrlHigh)/sqrt(n.ctrlLow_vs_ctrlHigh),coin::statistic(wt.ctrl_vs_ctrlLow)/sqrt(n.ctrl_vs_ctrlLow),coin::statistic(wt.ctrl_vs_ctrlHigh)/sqrt(n.ctrl_vs_ctrlHigh))
+  effectSize=c(coin::statistic(wt.ctrlLow_vs_ctrlHigh)/sqrt(n.ctrlLow_vs_ctrlHigh),coin::statistic(wt.ctrl_vs_ctrlLow)/sqrt(n.ctrl_vs_ctrlLow),coin::statistic(wt.ctrl_vs_ctrlHigh)/sqrt(n.ctrl_vs_ctrlHigh)),
+  Z=c(coin::statistic(wt.ctrlLow_vs_ctrlHigh),coin::statistic(wt.ctrl_vs_ctrlLow),coin::statistic(wt.ctrl_vs_ctrlHigh))
 )
 # adjust p-value
 lowHR_vs_highHR.df$padjust<-p.adjust(lowHR_vs_highHR.df$p, method = "BH" )
@@ -702,16 +703,16 @@ p_dist_HR_combined
 
 ```{r}
 # export figs
-pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/dist_ctrl_hlHR.pdf"), width=14,height=4)
+pdf(paste0(PATHanalNov2023,"dist_ctrl_hlHR.pdf"), width=14,height=4)
 p_dist_HR_combined
 dev.off()
 
 
-pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_dist_ctrl_hlHR.pdf"), width=13,height=3)
+pdf(paste0(PATHanalNov2023,"suppl_dist_ctrl_hlHR.pdf"), width=13,height=3)
 p_dist_HR_chrts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
 dev.off()
 
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_dist_ctrl_hlHR.png"),p_dist_HR_chrts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank()), width=14,height=4)
+ggsave(paste0(PATHanalNov2023,"suppl_dist_ctrl_hlHR.png"),p_dist_HR_chrts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank()), width=14,height=4)
 
 
 saveRDS(dist.HL_hr_cond_gat_intrChrt,paste0(PATHanalNov2023,"humanReads/dist.HL_hr_cond_gat_intrChrt.rds"))
@@ -792,8 +793,8 @@ p_HL_CTRL
 # combine HR-LR figure supplement
 p_suppl_HL<-plot_grid(p_HL_IBD+theme(legend.position = "none",axis.text.x = element_blank(),axis.ticks.x = element_blank())+ggtitle("IBD individuals"), p_HL_CTRL+theme(axis.title.y = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())+ggtitle("Control individuals"), labels = c("A","B"), rel_widths = c(1,1.45))
 
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig.HL_ibd_ctrls.pdf"),p_suppl_HL,height=4,width=7)
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/supplFig.HL_ibd_ctrls.png"),p_suppl_HL,height=4,width=7)
+ggsave(paste0(PATHanalNov2023,"supplFig.HL_ibd_ctrls.pdf"),p_suppl_HL,height=4,width=7)
+ggsave(paste0(PATHanalNov2023,"supplFig.HL_ibd_ctrls.png"),p_suppl_HL,height=4,width=7)
 ```
 
 Matching of HR percentages between control and IBD 
@@ -907,7 +908,7 @@ pmva_md_hr.df$q<-p.adjust(pmva_md_hr.df$p, method = "BH")
 pmva_md_hr.df
 
 # export permanova results to csv
-write.csv(pmva_md_hr.df, paste0(PATHanalNov2023,"Downstream/Results/pmva.matchedInfl.csv"), row.names = FALSE)
+write.csv(pmva_md_hr.df, paste0(PATHanalNov2023,"pmva.matchedInfl.csv"), row.names = FALSE)
 ```
 
 ```{r}
@@ -954,10 +955,10 @@ p_box_md_hr<-ggplot(df.p_box_md_hr.gat, aes(x=cohort,y=dist))+
 p_box_md_hr
 
 # export plots
-pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_box_matched_hr.pdf"), width=7,height=3)
+pdf(paste0(PATHanalNov2023,"suppl_p_box_matched_hr.pdf"), width=7,height=3)
 p_box_md_hr
 dev.off()
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_box_matched_hr.png"), p_box_md_hr,width=8,height=4)
+ggsave(paste0(PATHanalNov2023,"suppl_p_box_matched_hr.png"), p_box_md_hr,width=8,height=4)
 ```
 
 ```{r}
@@ -1186,18 +1187,18 @@ p_iiv
 
 ```{r}
 # export plots
-pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/p_iiv_hlHR.pdf"), width=8,height=3)
+pdf(paste0(PATHanalNov2023,"p_iiv_hlHR.pdf"), width=8,height=3)
 p_iiv
 dev.off()
 
-pdf(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv_hlHR.pdf"), width=7,height=3)
+pdf(paste0(PATHanalNov2023,"suppl_p_iiv_hlHR.pdf"), width=7,height=3)
 p_iiv_cohorts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
 dev.off()
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv_hlHR.png"), p_iiv_cohorts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
+ggsave(paste0(PATHanalNov2023,"suppl_p_iiv_hlHR.png"), p_iiv_cohorts+theme(legend.position="top",axis.text.x=element_blank(), axis.title.x=element_blank(), axis.ticks=element_blank())
 ,width=8,height=4)
 
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired_hlHR.png"), p_iiv_paired, width=4,height=4)
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired_hlHR.pdf"), p_iiv_paired, width=4,height=4)
+ggsave(paste0(PATHanalNov2023,"suppl_p_iiv-paired_hlHR.png"), p_iiv_paired, width=4,height=4)
+ggsave(paste0(PATHanalNov2023,"suppl_p_iiv-paired_hlHR.pdf"), p_iiv_paired, width=4,height=4)
 
 saveRDS(dist.HL_hr_ind_gat_intraInd,paste0(PATHanalNov2023,"humanReads/dist.HL_hr_ind_gat_intraInd.rds"))
 ```
@@ -1214,15 +1215,9 @@ p_suppl_iiv_pairChrts<-plot_grid(p_iiv_A,
           align = "h", axis = "tb",
           labels=c("A","B"), nrow=1)
 
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired-cohorts_hlHR.png"), p_suppl_iiv_pairChrts, width=9,height=4)
-ggsave(paste0(PATHanalNov2023,"Downstream/Results/Figures/suppl_p_iiv-paired-cohorts_hlHR.pdf"), p_suppl_iiv_pairChrts, width=9,height=4)
+ggsave(paste0(PATHanalNov2023,"suppl_p_iiv-paired-cohorts_hlHR.png"), p_suppl_iiv_pairChrts, width=9,height=4)
+ggsave(paste0(PATHanalNov2023,"suppl_p_iiv-paired-cohorts_hlHR.pdf"), p_suppl_iiv_pairChrts, width=9,height=4)
 
 p_suppl_iiv_pairChrts
 ```
 
-
-# Save workspace
-```{r, message =F, warning =F}
-save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/Temporal_variation.RData"))
-
-```

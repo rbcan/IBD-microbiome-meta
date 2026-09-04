@@ -41,13 +41,14 @@ library(tidyverse)
 # Load and clean data
 Load the abundance file and the metadata
 ```{r}
-PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
 ```
 
 
 ```{r, message=F}
 
-spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+spec<-read.delim(paste0(PATHanalNov2023,"IBD.MGSabundance.txt"), header = T, row.names = 1)
 dim(spec)
 
 rownames(spec) %>% tail
@@ -69,7 +70,7 @@ There are 1546 Species and 4839 samples
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
 dim(meta)
 sapply(meta, class)
 
@@ -80,7 +81,7 @@ meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
 # meta$age_category<-factor(meta$age_category, levels = c("child", "adult"))
 # meta$sex<-factor(meta$sex, levels = c("Female", "Male"))
 # load metasumamry
-meta.summary<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
+meta.summary<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
 
 ```
 
@@ -175,7 +176,7 @@ l_spec.long<-split(spec.long, f = as.factor(spec.long$cohort))
 ## Build linea models for cross-sectional 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 # source the function
-source(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/DA_function.R"))
+source(paste0(gitdir,"/DA_function.R"))
 
 l_spec.cross<-lapply(l_spec.cross, function(x) x[,-1*which(names(x) == "cohort")])
 
@@ -184,8 +185,8 @@ df.cross<-calcualte_da_lm(list.df = l_spec.cross,
                 treat = "IBD",
                 meta.summary = meta.summary)
 
-saveRDS(df.cross, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/df.cross.rds"))
-df.cross<-readRDS(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/df.cross.rds"))
+saveRDS(df.cross, paste0(PATHanalNov2023,"DA_analysis/df.cross.rds"))
+df.cross<-readRDS(paste0(PATHanalNov2023,"DA_analysis/df.cross.rds"))
 
 ```
 
@@ -217,7 +218,7 @@ the mx number of samples per individual is 25.
 We resampled 20 time the data
 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
-df.row<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.20.txt"),sep="\t")
+df.row<-read.delim2(paste0(PATHanalNov2023,"resampling.20.txt"),sep="\t")
 
 # now, loop over the 20 repetition and perform the DA 20 times
 l.meta.boot<-vector(length = 20, mode = "list")
@@ -251,7 +252,7 @@ for(i in 1:20){
 
 }
 
-saveRDS(l.df.long.boost,paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.df.long.boost.rds"))
+saveRDS(l.df.long.boost,paste0(PATHanalNov2023,"DA_analysis/l.df.long.boost.rds"))
 
 ```
 
@@ -272,8 +273,7 @@ for(i in 1:20){
                  bins = vector())
   for(b in 1:length(bins)){
     tmp.bin<-tmp[tmp$bin == bins[b],]
-    #try(met<-metagen(TE=estimate, seTE=std.error,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort))
-    met<-try(metagen(TE=estimate, seTE=std.error,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort)) ### RAN ADAPTED FROM ABOVE LINE - check  !!
+    met<-try(metagen(TE=estimate, seTE=std.error,data=tmp.bin, method.tau = "REML",title =bins[b], studlab = Cohort)) 
     if(class(met)[1] != "try-error"){
     met.df<-as.data.frame(c(met[c("TE.random","seTE.random", "lower.random", "upper.random", "pval.random")],bins= bins[b])) 
     df<-rbind.data.frame(df, met.df)  
@@ -284,42 +284,8 @@ for(i in 1:20){
   l.meta[[i]]<-df
 }
 
-saveRDS(l.meta, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.rds"))
-
-```
-
-# Subset sign bin and plot concordances
-The strategy below was taken from this post: https://stackoverflow.com/questions/53575257/make-binary-presence-absence-data-matrix-from-multiple-lists-in-r
-
-```{r, message =F, warning =F}
-l.meta.sign<-lapply(l.meta, function(x) subset(x,  p.adjust < 0.05))
-# create the datafram with the bins
-saveRDS(l.meta.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.sign.rds"))
-
-df.all<-do.call(rbind, l.meta.sign)
-df.all$in20<-vector(length = nrow(df.all))
-for(i in 1: nrow(df.all)){
-  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
-}
-df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated, meaning one per mGS
-tax.sign<-df.all[df.all$in20 == TRUE,]$bins
-
-length(tax.sign)
+saveRDS(l.meta, paste0(PATHanalNov2023,"DA_analysis/l.meta.rds"))
 
 ```
 
 
-# Select only sign taxa 
-```{r}
-l.meta.sign.20<-lapply(l.meta.sign, function(x) subset(x, bins %in% tax.sign))
-
-saveRDS(l.meta.sign.20, paste0(PATHanalNov2023, "DA_analysis/November_2023_v3/R_analysis/RDS/l.meta.sign.20.rds"))
-```
-
-
-#Save workspace
-```{r, message =F, warning =F}
-dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/"), recursive = T)
-save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/DA_Nov2023.RData"))
-#load("~/OneDrive/work/HildebrandGroup/IBD/analysisNov2023/DA_analysis/November_2023_v3/R_analysis/RData/DA_Nov2023.RData")
-```

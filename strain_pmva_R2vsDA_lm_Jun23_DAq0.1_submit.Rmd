@@ -1,0 +1,338 @@
+---
+title: "strain_pmva"
+author: "Rebecca Ansorge"
+date: "13/06/2023"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Correlate clustering of strains into clades according to disease state with species-level differential abundance effect sizes
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+# import libraries
+```{r include=FALSE}
+library(tidyverse)
+library(ggpubr)
+library(ggtree)
+library(ggtreeExtra)
+library(ggnewscale)
+library(ape)
+library(ggVennDiagram)
+```
+
+# import and reshape data
+
+```{r}
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
+qval<-0.1
+```
+
+## strains
+```{r include=FALSE}
+# import prevalence filtered MGS IDs
+prevMGS.tab<-read_csv(paste0(PATHanalNov2023,"prev.filt.MGS.txt"))%>%
+  mutate(prevMGS=gsub('.*;MGS','MGS',x))
+prevMGS<-prevMGS.tab$prevMGS
+
+ibd.strains.pmva.all<-readRDS(paste0(PATHanalNov2023,"strains/ibd.strains.pmva.all.June23.rds"))
+ibd2.strains.pmva.all<-readRDS(paste0(PATHanalNov2023,"strains/ibd2.strains.pmva.all.June23.rds"))
+```
+
+## DA
+```{r}
+# all species DA
+metaDA<-readRDS(paste0(PATHanalNov2023,"DA_analysis/l.meta.prevfilt.rds"))
+
+df.ibd.DA<-do.call(rbind, metaDA)
+count.DA<-df.ibd.DA%>%
+  mutate(significance=ifelse(p.adjust<qval,"significant","non-significant"))%>%
+  filter(significance=="significant")%>%
+  count(bins)%>%
+  rename("n_sig"=n)
+count20.DA<-count.DA%>%
+  filter(n_sig==20)
+countLess20.DA<-count.DA%>%
+  filter(n_sig<20)
+robustMGSDA<-count20.DA$bins
+variableMGSDA<-countLess20.DA$bins
+
+# add info of robustness to all DA results
+metaDAall<-lapply(metaDA, function(m){
+  m %>%
+    mutate(robustDA=ifelse(bins%in%robustMGSDA,"robust",ifelse(bins%in%variableMGSDA,"variable","non-sig")))%>%
+    left_join(count.DA, by="bins")%>%
+    mutate(n_sig=ifelse(robustDA=="non-sig",0,n_sig))
+})
+```
+
+## metadata and trees
+```{r}
+
+ibdMeta<-read.delim2(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), sep="\t") %>%
+  mutate(row=SmplID) %>%
+  column_to_rownames("row")
+
+spTree<-read.tree(paste0(PATHanalNov2023,"IQtree_allsites.treefile"))
+
+```
+
+# summarize strain grouping numbers
+```{r}
+table(ibd.strains.pmva.all[[1]]$robustStrains)
+table(ibd2.strains.pmva.all[[1]]$robustStrains)
+```
+
+```{r}
+
+ibdRes1<-do.call(rbind, ibd.strains.pmva.all)
+ibdRes1<-ibdRes1%>%
+  group_by(var)%>%
+  mutate(meanR2=mean(R2))%>%
+  mutate(stdevR2=sd(R2))%>%
+  select(c(var,meanR2,stdevR2,robustStrains,n_sig))%>%
+  distinct()
+
+ibd.strains.p1<-ggplot(ibdRes1%>%filter(robustStrains=="robust"), aes(x=meanR2,y=var))+
+  geom_point(alpha=0.7)+
+  geom_errorbar(aes(xmin=meanR2-stdevR2, xmax=meanR2+stdevR2), width=.2)+
+  ggtitle("robust sign. strain grouping mean R2 acc. to IBD vs HC")
+ibd.strains.p1
+
+ibdRes2<-do.call(rbind, ibd2.strains.pmva.all)
+ibdRes2<-ibdRes2%>%
+  group_by(var)%>%
+  mutate(meanR2=mean(R2))%>%
+  mutate(stdevR2=sd(R2))%>%
+  select(c(var,meanR2,stdevR2,robustStrains,n_sig))%>%
+  distinct()
+
+ibd2.strains.p1<-ggplot(ibdRes2%>%filter(robustStrains=="robust"), aes(x=meanR2,y=var))+
+  geom_point(alpha=0.7)+
+  geom_errorbar(aes(xmin=meanR2-stdevR2, xmax=meanR2+stdevR2), width=.2)+
+  ggtitle("robust sign. strain grouping mean R2 to CD vs UC vs HC")
+ibd2.strains.p1
+
+```
+
+# overlap of MGS between IBD and IBD2
+```{r}
+x <- list(
+  ibd = (ibdRes1%>%filter(robustStrains=="robust"))$var, 
+  ibd2 = (ibdRes2%>%filter(robustStrains=="robust"))$var)
+
+ggVennDiagram(x, label_alpha = 0, edge_size =0)+
+  scale_fill_gradient(low="white",high = "salmon")+
+  ggtitle("robust significant strain grouping")
+
+y <- list(
+  ibd = (ibdRes1%>%filter(robustStrains=="variable"))$var, 
+  ibd2 = (ibdRes2%>%filter(robustStrains=="variable"))$var)
+
+ggVennDiagram(y, label_alpha = 0, edge_size =0)+
+  scale_fill_gradient(low="white",high = "salmon")+
+  ggtitle("variable significant strain grouping")
+
+```
+
+# plot strain clade R2 (sig. and non-sig.) vs DA effect size
+
+no filtration of clustering data
+
+```{r}
+# consider removing low-prevalence ones to match with DA
+
+# create df with mean effect sizes and R2
+STRAINmeans<-ibdRes1%>%
+  rename(MGS=var)
+
+DAmeans<-do.call(rbind, metaDAall)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",bins))%>%
+  mutate(TE.random=as.numeric(TE.random))
+DAmeans<-DAmeans%>%
+  group_by(MGS)%>%
+  mutate(meanTE.random=mean(TE.random))%>%
+  mutate(stdevTE.random=sd(TE.random))%>%
+  select(c(bins,meanTE.random,stdevTE.random,robustDA))%>%
+  distinct()
+
+strainR2vsTE<-STRAINmeans %>%
+  full_join(DAmeans, by="MGS") %>%
+  mutate(abs.meanTE.random=abs(meanTE.random))%>%
+  mutate(significance=ifelse(robustStrains!="non-sig" & robustDA!="non-sig","both sig",ifelse(robustStrains!="non-sig" & robustDA=="non-sig","strains sig",ifelse(robustDA!="non-sig" & robustStrains=="non-sig","DA sig","not sig"))))%>%
+  mutate(robustness=paste0("strains_",robustStrains," DA_",robustDA))%>%
+  filter(significance!="not sig") # remove MGS not significant in any
+
+strainR2vsTE.inclNonSig<-STRAINmeans %>%
+  full_join(DAmeans, by="MGS") %>%
+  mutate(abs.meanTE.random=abs(meanTE.random))%>%
+  mutate(significance=ifelse(robustStrains!="non-sig" & robustDA!="non-sig","both sig",ifelse(robustStrains!="non-sig" & robustDA=="non-sig","strains sig",ifelse(robustDA!="non-sig" & robustStrains=="non-sig","DA sig","not sig"))))%>%
+  mutate(robustness=paste0("strains_",robustStrains," DA_",robustDA))
+
+#saveRDS(strainR2vsTE.inclNonSig,paste0(PATHanalNov2023,"strains/RDS/strainR2vsTE.inclNonSig.June23.rds"))
+#strainR2vsTE.inclNonSig<-readRDS(paste0(PATHanalNov2023,"strains/RDS/strainR2vsTE.inclNonSig.June23.rds"))
+
+# swap over too DA q<0.1
+strainR2vsTE.inclNonSig_q0.1<-strainR2vsTE.inclNonSig%>%
+  select(colnames(strainR2vsTE.inclNonSig)[1:5])%>%
+  full_join(DAmeans, by="MGS") %>%
+  mutate(abs.meanTE.random=abs(meanTE.random))%>%
+  mutate(significance=ifelse(robustStrains!="non-sig" & robustDA!="non-sig","both sig",ifelse(robustStrains!="non-sig" & robustDA=="non-sig","strains sig",ifelse(robustDA!="non-sig" & robustStrains=="non-sig","DA sig","not sig"))))%>%
+  mutate(robustness=paste0("strains_",robustStrains," DA_",robustDA))
+
+strainR2vsTE.inclNonSig_q0.1%>%
+  group_by(robustDA)%>%
+  count()
+
+# only significant ones
+strainR2vsTE_q0.1<-strainR2vsTE.inclNonSig_q0.1%>%
+  mutate(significance=ifelse(robustStrains!="non-sig" & robustDA!="non-sig","both sig",ifelse(robustStrains!="non-sig" & robustDA=="non-sig","strains sig",ifelse(robustDA!="non-sig" & robustStrains=="non-sig","DA sig","not sig"))))%>%
+  mutate(robustness=paste0("strains_",robustStrains," DA_",robustDA))%>%
+  filter(significance!="not sig") # remove MGS not significant in any
+
+strainR2vsTE<-strainR2vsTE_q0.1
+strainR2vsTE.inclNonSig<-strainR2vsTE.inclNonSig_q0.1
+
+saveRDS(strainR2vsTE.inclNonSig,paste0(PATHanalNov2023,"strains/strainR2vsTE.inclNonSig_q0.1.June23.rds"))
+```
+
+```{r}
+# create df with mean effect sizes and R2
+STRAINmeans_ibd<-ibdRes1%>%
+  rename(MGS=var)%>%
+  rename(meanR2_IBD=meanR2)%>%
+  rename(stdevR2_IBD=stdevR2)%>%
+  rename(robustStrains_IBD=robustStrains)%>%
+  rename(n_sig_IBD=n_sig)
+STRAINmeans_ibd2<-ibdRes2%>%
+  rename(MGS=var)%>%
+  rename(meanR2_CDUCCTRL=meanR2)%>%
+  rename(stdevR2_CDUCCTRL=stdevR2)%>%
+  rename(robustStrains_CDUCCTRL=robustStrains)%>%
+  rename(n_sig_CDUCCTRL=n_sig)
+
+DAmeans_ibd<-do.call(rbind, metaDAall)%>%
+  mutate(MGS=gsub(".*;MGS","MGS",bins))%>%
+  mutate(TE.random=as.numeric(TE.random))
+DAmeans_ibd<-DAmeans_ibd%>%
+  group_by(MGS)%>%
+  mutate(meanTE.random=mean(TE.random))%>%
+  mutate(stdevTE.random=sd(TE.random))%>%
+  select(c(bins,meanTE.random,stdevTE.random,robustDA,n_sig))%>%
+  distinct()%>%
+  rename(n_sig_DA=n_sig)
+
+strainR2vsTE.inclNonSig.ibd_ibd2<-STRAINmeans_ibd %>%
+  full_join(STRAINmeans_ibd2, by="MGS") %>%
+  full_join(DAmeans_ibd, by="MGS") %>%
+  mutate(abs.meanTE.random=abs(meanTE.random))
+
+saveRDS(strainR2vsTE.inclNonSig.ibd_ibd2,paste0(PATHanalNov2023,"strains/RDS/strainR2vsTE.inclNonSig.ibd_ibd2.June23.rds"))
+#strainR2vsTE.inclNonSig.ibd_ibd2<-readRDS(paste0(PATHanalNov2023,"strains/strainR2vsTE.inclNonSig.ibd_ibd2.June23.rds"))
+
+strainR2vsTE.inclNonSig.ibd_ibd2_q0.1<-strainR2vsTE.inclNonSig.ibd_ibd2%>%
+  select(1:9)%>%
+  full_join(DAmeans_ibd, by="MGS") %>%
+  mutate(abs.meanTE.random=abs(meanTE.random))
+
+strainR2vsTE.inclNonSig.ibd_ibd2<-strainR2vsTE.inclNonSig.ibd_ibd2_q0.1
+
+saveRDS(strainR2vsTE.inclNonSig.ibd_ibd2,paste0(PATHanalNov2023,"strains/strainR2vsTE.inclNonSig_q0.1.ibd_ibd2.June23.rds"))
+
+```
+
+# tree stats
+```{r}
+
+tree.df.prev<-readRDS(paste0(PATHanalNov2023,"strains/tree.df.prev.June23.rds"))
+```
+
+# merge with tips
+```{r}
+strainR2vsTE.incTips<-strainR2vsTE %>%
+  left_join(tree.df.prev, by="MGS")
+strainR2vsTE.incTips
+
+saveRDS(strainR2vsTE.incTips,paste0(PATHanalNov2023,"strains/strainR2vsTE.incTips_q0.1.June23.rds"))
+
+strainR2vsTE.incTips
+```
+
+# LM 
+```{r}
+
+# run linear model with number of tips and DA effect size
+lm.out<-lm(meanR2 ~ Tips + abs(meanTE.random), data=strainR2vsTE.incTips)
+summary(lm.out)
+lm.out.log2<-lm(log2(meanR2) ~ Tips + abs(meanTE.random), data=strainR2vsTE.incTips)
+summary(lm.out.log2)
+  
+# run linear model with number of tips and DA effect size only significant ones in both
+lm.out.sig<-lm(meanR2 ~ Tips + abs(meanTE.random), data=strainR2vsTE.incTips%>%filter(significance=="both sig"))
+summary(lm.out.sig)
+lm.out.sig.log<-lm(log2(meanR2) ~ Tips + abs(meanTE.random), data=strainR2vsTE.incTips%>%filter(significance=="both sig"))
+summary(lm.out.sig.log)
+
+lm.list<-list(anysig=summary(lm.out),anysigLog2=summary(lm.out.log2),bothsig=summary(lm.out.sig),bothsigLog2=summary(lm.out.sig.log))
+saveRDS(lm.list,paste0(PATHanalNov2023,"strains/strainR2vsDA.lm.June23_q0.1.rds"))
+```
+The linear model shows a negative correlation between mean R2 (and log2 of mean) in strain clades compared to mean effect size of species differential abundance after accounting for number of tips. This was done on prevalence-filtered, robust MGS only.
+
+# plot DA effect sizes against strain R2 (only robust) 
+```{r}
+strainR2vsTE.p1<-ggplot(strainR2vsTE) +
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),xmin=log2(meanR2-stdevR2), xmax=log2(meanR2+stdevR2)), width=.1, color='grey')+
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),ymin=abs(meanTE.random)-stdevTE.random, ymax=abs(meanTE.random)+stdevTE.random), width=.1, color='grey')+
+    geom_smooth(aes(x=log2(meanR2),y=abs(meanTE.random)),method='lm', color="black", size=0.5, alpha=0.2) +
+    geom_point(aes(x=log2(meanR2),y=abs(meanTE.random),color=significance), alpha=0.7) +
+    theme_bw() +
+    ggtitle("DA effect sizes VS R2 of permanova")+
+    ylab("DA effect size") +
+    xlab("log2(mean R2 of strain clustering IBD vs. healthy)") +
+    theme(title = element_text(size=10),
+        legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white", colour = NA),
+        legend.key.size = unit(0.1, "cm"),
+        legend.spacing.y = unit(0.1, "cm"))
+strainR2vsTE.p1
+ggsave(paste0(PATHanalNov2023,"strains/strainR2vsTE.eachsig_q0.1.June23.pdf"),strainR2vsTE.p1,height=5,width=6)
+```
+
+# plot significant mean DA effect size against significant mean R2 only
+```{r}
+strainR2vsTE.p2<-ggplot(strainR2vsTE%>%filter(significance=="both sig")) +
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),xmin=log2(meanR2-stdevR2), xmax=log2(meanR2+stdevR2)), width=.1, color='grey')+
+    geom_errorbar(aes(x=log2(meanR2),y=abs(meanTE.random),ymin=abs(meanTE.random)-stdevTE.random, ymax=abs(meanTE.random)+stdevTE.random), width=.1, color='grey')+
+    geom_smooth(aes(x=log2(meanR2),y=abs(meanTE.random)),method='lm', color="black", size=0.5, alpha=0.2) +
+    geom_point(aes(x=log2(meanR2),y=abs(meanTE.random)), alpha=0.7) +
+    #stat_cor(aes(x=log2(meanR2),y=abs(meanTE.random)),label.x = -10, label.y = 1,size=3) +
+    theme_bw() +
+    ggtitle("DA effect sizes VS R2 of permanova (MGS sig in both) ")+
+    ylab("DA effect size") +
+    xlab("log2(mean R2 of strain clustering IBD vs. healthy)") +
+    theme(title = element_text(size=10),
+        #legend.position = "top",
+        legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white", colour = NA),
+        legend.key.size = unit(0.1, "cm"),
+        legend.spacing.y = unit(0.1, "cm"))
+strainR2vsTE.p2
+ggsave(paste0(PATHanalNov2023,"strains/strainR2vsTE.bothsig_q0.1.June23.pdf"),strainR2vsTE.p2,height=5,width=5)
+```
+
+# confusion matrix
+```{r}
+strainR2vsTE.inclNonSig.counts<-strainR2vsTE.inclNonSig%>%
+  group_by(significance)%>%
+  count()
+strainR2vsTE.inclNonSig.counts
+
+```
+
+

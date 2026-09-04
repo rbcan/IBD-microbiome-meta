@@ -38,14 +38,16 @@ library(lattice)
 ```
 
 ```{r}
-PATHanalNov2023<-"~/Documents/Rebecca/onedrive/analysisNov2023/"
+#gitdir<-"" # set to git location
+PATHanalNov2023<-paste0(gitdir,"/data/")
+PATH=paste0(gitdir,"/data/")
 ```
 # Load and clean data
 Load the abundance file and the metadata
 
 ```{r, message=F}
 
-spec<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGSabundance.txt"), header = T, row.names = 1)
+spec<-read.delim(paste0(PATHanalNov2023,"IBD.MGSabundance.txt"), header = T, row.names = 1)
 
 
 dim(spec)
@@ -66,18 +68,14 @@ spec.tss<-spec.tss[-1*which(rownames(spec.tss) == "other"),]
 # Load and format the metadata
 
 ```{r, message =F, warning =F}
-meta<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
+meta<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.matched.txt"), header = T, sep = "\t")
 dim(meta)
 sapply(meta, class)
 
 meta$IBD<-factor(meta$IBD, levels = c("healthy", "IBD"))
 meta$IBD2<-factor(meta$IBD2, levels = c("healthy", "UC", "CD"))
 
-# the one below are not made aas factor, they will be made as a factor in the DA function
-# meta$age_category<-factor(meta$age_category, levels = c("child", "adult"))
-# meta$sex<-factor(meta$sex, levels = c("Female", "Male"))
-# load metasumamry
-meta.summary<-read.delim(paste0(PATHanalNov2023,"PrepData/IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
+meta.summary<-read.delim(paste0(PATHanalNov2023,"IBDmeta.cur.filt.mc.overview.txt"), header = T, sep = "\t")
 
 ```
 
@@ -160,7 +158,7 @@ l_spec.long<-split(spec.long, f = as.factor(spec.long$cohort))
 ## Build linea models for cross-sectional 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 # source the function
-source(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/DA_function_UCvsCD.R"))
+source(paste0(gitdir,"/DA_function_UCvsCD.R"))
 
 l_spec.cross<-lapply(l_spec.cross, function(x) x[,-1*which(names(x) == "cohort")])
 
@@ -169,7 +167,7 @@ df.cross<-calcualte_da_lm(list.df = l_spec.cross,
                 treat = "IBD2",
                 meta.summary = meta.summary)
 
-saveRDS(df.cross, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/df.cross.uc_cd.rds"))
+saveRDS(df.cross, paste0(PATHanalNov2023,"DA_analysis/df.cross.uc_cd.rds"))
 
 ```
 
@@ -179,7 +177,7 @@ Load resamplings
 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 
-df.row<-read.delim2(paste0(PATHanalNov2023,"PrepData/resampling.CDUC.20.txt",sep="\t"))
+df.row<-read.delim2(paste0(PATHanalNov2023,"resampling.CDUC.20.txt",sep="\t"))
 
 # now, loop over the 20 repetition and perform the DA 20 times
 l.meta.boot<-vector(length = 20, mode = "list")
@@ -210,7 +208,7 @@ for(i in 1:20){
 
 }
 
-saveRDS(l.df.long.boost, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.df.long.boost.uc_cd.rds"))
+saveRDS(l.df.long.boost, paste0(PATHanalNov2023,"DA_analysis/l.df.long.boost.uc_cd.rds"))
 
 ```
 # Select only the same comparisons
@@ -252,36 +250,7 @@ for(i in 1:20){
   df$p.adjust<-p.adjust(df$pval.random, method = "fdr")
   l.meta_uccd[[i]]<-df
 }
-#saveRDS(l.meta_uccd, "~/Documents/IBD/March_2023/R_analysis/RDS/l.meta_uccd.rds")
-saveRDS(l.meta_uccd, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.rds"))
-
-
-l.meta_uccd.sign<-lapply(l.meta_uccd, function(x) subset(x,  p.adjust < 0.05))
-# create the datafram with the bins
-saveRDS(l.meta_uccd.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.sign.rds"))
-
-df.all<-do.call(rbind, l.meta_uccd.sign)
-df.all$in20<-vector(length = nrow(df.all))
-for(i in 1: nrow(df.all)){
-  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
-}
-df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated, meaning one per mGS
-tax.sign<-df.all[df.all$in20 == TRUE,]$bins
-
-length(tax.sign)
-l.meta_uccd.sign.20<-lapply(l.meta_uccd.sign, function(x) subset(x, bins %in% tax.sign))
-#dir.create("~/Documents/IBD/March_2023/R_analysis/RDS/", recursive = T)
-dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/", recursive = T))
-
-#saveRDS(l.meta_uccd.sign.20, "~/Documents/IBD/March_2023/R_analysis/RDS/l.meta_uccd.sign.20.rds")
-saveRDS(l.meta_uccd.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.sign.20.rds"))
-
-#tax<-read.delim("~/Documents/IBD/March_2023/Raw_data/IBD.MGStaxa_March2023.txt", header = T, row.names = 1)
-tax<-read.delim(paste0(PATHanalNov2023,"PrepData/IBD.MGStaxa.txt"), header = T, row.names = 1)
-
-tax[tax.sign,]
-#saveRDS(tax[tax.sign,], "~/Documents/IBD/March_2023/R_analysis/RDS/l.meta_uccd.sign.20.taxa.rds")
-saveRDS(tax[tax.sign,], paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccd.sign.20.taxa.rds"))
+saveRDS(l.meta_uccd, paste0(PATHanalNov2023,"DA_analysis/l.meta_uccd.rds"))
 
 ```
 
@@ -317,26 +286,6 @@ for(i in 1:20){
 saveRDS(l.meta_uccontrols, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.rds"))
 
 
-l.meta_uccontrols.sign<-lapply(l.meta_uccontrols, function(x) subset(x,  p.adjust < 0.05))
-# create the datafram with the bins
-saveRDS(l.meta_uccontrols.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.sign.rds"))
-
-df.all<-do.call(rbind, l.meta_uccontrols.sign)
-df.all$in20<-vector(length = nrow(df.all))
-for(i in 1: nrow(df.all)){
-  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
-}
-df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated
-tax.sign<-df.all[df.all$in20 == TRUE,]$bins
-
-length(tax.sign)
-l.meta_uccontrols.sign.20<-lapply(l.meta_uccontrols.sign, function(x) subset(x, bins %in% tax.sign))
-
-saveRDS(l.meta_uccontrols.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.sign.20.rds"))
-
-tax[tax.sign,]
-saveRDS(tax[tax.sign,], paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_uccontrols.sign.20.taxa.rds"))
-
 ```
 
 ############
@@ -370,32 +319,5 @@ for(i in 1:20){
 }
 saveRDS(l.meta_cdcontrols, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.rds"))
 
-
-l.meta_cdcontrols.sign<-lapply(l.meta_cdcontrols, function(x) subset(x,  p.adjust < 0.05))
-# create the datafram with the bins
-saveRDS(l.meta_cdcontrols.sign, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.sign.rds"))
-
-df.all<-do.call(rbind, l.meta_cdcontrols.sign)
-df.all$in20<-vector(length = nrow(df.all))
-for(i in 1: nrow(df.all)){
-  df.all$in20[i]<-ifelse(sum(df.all$bins == df.all$bins[i]) == 20, "TRUE", "FALSE")
-}
-df.all<-df.all[!duplicated(df.all$bins),] # select only duplicated
-tax.sign<-df.all[df.all$in20 == TRUE,]$bins
-
-length(tax.sign)
-l.meta_cdcontrols.sign.20<-lapply(l.meta_cdcontrols.sign, function(x) subset(x, bins %in% tax.sign))
-#dir.create("~/Documents/IBD/March_2023/R_analysis/RDS/", recursive = T)
-
-saveRDS(l.meta_cdcontrols.sign.20, paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.sign.20.rds"))
-
-tax[tax.sign,]
-saveRDS(tax[tax.sign,], paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RDS/l.meta_cdcontrols.sign.20.taxa.rds"))
-
 ```
 
-#Save workspace
-```{r, message =F, warning =F}
-dir.create(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/RData/", recursive = T))
-save.image(paste0(PATHanalNov2023,"DA_analysis/November_2023_v3/R_analysis/DA_UC_CD_Nov2023.RData"))
-```

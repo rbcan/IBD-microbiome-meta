@@ -1,0 +1,5 @@
+"enriched"	"DA"	"IBDHC"	"CDHC"	"UCHC"	"CDUC"
+"disease"	"robust"	18	22	10	8
+"disease"	"variable"	18	23	12	21
+"control"	"robust"	121	130	89	16
+"control"	"variable"	34	41	42	35

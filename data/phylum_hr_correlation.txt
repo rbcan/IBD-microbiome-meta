@@ -1,0 +1,14 @@
+Feature name	p-value	q-value	β	FeatureSum (%)	Superkingdom	Phylum
+Bacteria;Proteobacteria	0	0	0.0565087352033283	6.02401580151954	Bacteria	Proteobacteria
+Bacteria;Verrucomicrobiota	2.06E-27	1.24E-26	-0.036451874561551	1.27645343672599	Bacteria	Verrucomicrobiota
+Bacteria;Desulfobacterota_I	1.20E-25	4.78E-25	-0.0575100068285298	0.163658595211471	Bacteria	Desulfobacterota_I
+Bacteria;Bacteroidota	5.34E-19	1.60E-18	-0.0831371434263917	32.7937964404778	Bacteria	Bacteroidota
+Bacteria;Fusobacteriota	8.74E-13	2.10E-12	-0.0345792385853196	0.215076238151473	Bacteria	Fusobacteriota
+Bacteria;Firmicutes_B	6.28E-11	1.26E-10	-0.0444634515002091	0.0152580810350413	Bacteria	Firmicutes_B
+Bacteria;Cyanobacteria	1.20E-09	2.06E-09	-0.0598831351381732	0.090503412166752	Bacteria	Cyanobacteria
+Bacteria;Firmicutes_A	0.00272599133530541	0.00408898700295812	-0.0560394799846807	45.8066404004724	Bacteria	Firmicutes_A
+Archaea;Methanobacteriota	0.00572478205226739	0.00763304273635652	-0.0355812748796661	0.230543333995214	Archaea	Methanobacteriota
+Bacteria;Firmicutes	0.013158914801791	0.0157906977621492	-0.0172250550636618	3.77961478570757	Bacteria	Firmicutes
+Bacteria;Firmicutes_C	0.521768718246887	0.569202238087513	-0.0347885710217015	3.17430789971469	Bacteria	Firmicutes_C
+Bacteria;Actinobacteriota	0.906728564217257	0.906728564217257	-0.0280056625707595	6.43013157482207	Bacteria	Actinobacteriota
+
