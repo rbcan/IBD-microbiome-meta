@@ -1,8 +1,8 @@
 # IBD-microbiome-meta
 
-These scripts and intermediary files have been created used to perform the analyses in our study \n
-"Temporal strain-resolved metagenomics associates IBD dysbiosis with gastrointestinal inflammation" \n
-authored by Rebecca Ansorge, Stefano Romano, Clémence Frioux, Tamás Korcsmáros, Myeonghyun Yoou, Nathalie Juge, Katarzyna Sidorczuk, Falk Hildebrand\n\n
+These scripts and intermediary files have been created used to perform the analyses in our study 
+"Temporal strain-resolved metagenomics associates IBD dysbiosis with gastrointestinal inflammation" 
+authored by Rebecca Ansorge, Stefano Romano, Clémence Frioux, Tamás Korcsmáros, Myeonghyun Yoou, Nathalie Juge, Katarzyna Sidorczuk, Falk Hildebrand
 
 The code was tailored to our study to allow more detailed understanding of the analyses and allow better reproducibility and do not represent tools and scripts for general use.
 
