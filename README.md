@@ -2,7 +2,7 @@
 
 These scripts and intermediary files have been created used to perform the analyses in our study 
 "Temporal strain-resolved metagenomics associates IBD dysbiosis with gastrointestinal inflammation" 
-authored by Rebecca Ansorge, Stefano Romano, Clémence Frioux, Tamás Korcsmáros, Myeonghyun Yoou, Nathalie Juge, Katarzyna Sidorczuk, Falk Hildebrand
+authored by *Rebecca Ansorge, Stefano Romano, Clémence Frioux, Tamás Korcsmáros, Myeonghyun Yoou, Nathalie Juge, Katarzyna Sidorczuk, Falk Hildebrand*
 
 The code was tailored to our study to allow more detailed understanding of the analyses and allow better reproducibility and do not represent tools and scripts for general use.
 
@@ -120,4 +120,4 @@ Generally all required inputs and intermediary files are provided needed to run 
 `strains/strainR2vsTE.inclNonSig.ibd_ibd2.June23.rds`	:	Results from linear model comparing strain clusterind and species differential abundances IBD subtypes, controls \
 `strains/strainR2vsTE.inclNonSig_q0.1.June23.rds`	:	Results from linear model comparing strain clusterind and species differential abundances IBD, controls \
 `strains/strainR2vsTE.incTips_q0.1.June23.rds`	:	Results from linear model comparing strain clusterind and species differential abundances IBD, controls (only significant) \
-`strains/tree.df.prev.June23.rds`	:	Numbr of tips per MGS-tree \
+`strains/tree.df.prev.June23.rds`	:	Number of tips per MGS-tree 
