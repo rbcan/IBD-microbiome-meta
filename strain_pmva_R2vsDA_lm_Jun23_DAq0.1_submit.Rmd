@@ -231,7 +231,7 @@ strainR2vsTE.inclNonSig.ibd_ibd2<-STRAINmeans_ibd %>%
   full_join(DAmeans_ibd, by="MGS") %>%
   mutate(abs.meanTE.random=abs(meanTE.random))
 
-saveRDS(strainR2vsTE.inclNonSig.ibd_ibd2,paste0(PATHanalNov2023,"strains/RDS/strainR2vsTE.inclNonSig.ibd_ibd2.June23.rds"))
+saveRDS(strainR2vsTE.inclNonSig.ibd_ibd2,paste0(PATHanalNov2023,"strains/strainR2vsTE.inclNonSig.ibd_ibd2.June23.rds"))
 #strainR2vsTE.inclNonSig.ibd_ibd2<-readRDS(paste0(PATHanalNov2023,"strains/strainR2vsTE.inclNonSig.ibd_ibd2.June23.rds"))
 
 strainR2vsTE.inclNonSig.ibd_ibd2_q0.1<-strainR2vsTE.inclNonSig.ibd_ibd2%>%

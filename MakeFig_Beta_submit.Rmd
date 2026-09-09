@@ -39,7 +39,7 @@ ad.bc<-readRDS(paste0(PATHanalNov2023,"DA_analysis/beta.pmva.bc.ibd.rds"))
 ad.bc.ibd2<-readRDS(paste0(PATHanalNov2023,"DA_analysis/beta.pmvaPair.bc.ibd2.rds"))
 perInd_dist_vs_deltaHR_meta_slope.df<-readRDS(paste0(PATHanalNov2023,"DA_analysis/perInd_dist_vs_deltaHR.rds"))
 dist_hr_indNest_log2_lm_perCohort<-readRDS(paste0(PATHanalNov2023,"DA_analysis/dist_hr_indNest_log2_lm_perCohort.rds"))
-chrts_overview.obj<-readRDS(paste0(PATHanalNov2023,"cohort_summary.rds"))
+chrts_overview.obj<-readRDS(paste0(PATHanalNov2023,"rds/cohort_summary.rds"))
 
 ```
 

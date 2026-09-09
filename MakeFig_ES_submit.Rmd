@@ -71,7 +71,7 @@ es.ab.meta$IBD%>%unique()
 ```
 
 ```{r}
-meta_hr<-readRDS(paste0(PATH,"meta_hr.rds"))%>%
+meta_hr<-readRDS(paste0(PATH,"rds/meta_hr.rds"))%>%
   select(c(SmplID,HumanRds))
  
 es.ab.meta_hr<-inner_join(es.ab.meta,meta_hr,by="SmplID")

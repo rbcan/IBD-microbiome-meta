@@ -207,7 +207,7 @@ DAmeans.all.mod<-DAmeans%>%
   full_join(DAmeans.cduc,by="MGS")%>%
   select(-c(5,9,13,17))
 colnames(DAmeans.all.mod)<-c("MGS","meanTE.IBDHC","stdevTE.IBDHC","IBDHC","meanTE.CDHC","stdevTE.CDHC","CDHC","meanTE.UCHC","stdevTE.UCHC","UCHC","meanTE.CDUC","stdevTE.CDUC","CDUC")
-write.table(DAmeans.all.mod,paste0(PATHanalNov2023,"Downstream/Results/DAmeans.ALL.0.1.txt"),sep="\t",row.names=FALSE)
+write.table(DAmeans.all.mod,paste0(PATHanalNov2023,"DAmeans.ALL.0.1.txt"),sep="\t",row.names=FALSE)
 
 IBDHCdis<-DAmeans.all.mod%>%filter(meanTE.IBDHC<0)%>%filter(IBDHC!="non-sig")%>%group_by(IBDHC)%>%count
 CDHCdis<-DAmeans.all.mod%>%filter(meanTE.CDHC<0)%>%filter(CDHC!="non-sig")%>%group_by(CDHC)%>%count
